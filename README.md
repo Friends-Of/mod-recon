@@ -1,6 +1,6 @@
-# Reforger Watch
+# Mod Recon
 
-Reforger Watch is an open-source community utility that monitors Arma Reforger servers and reports changes to their mod manifests. The hosted service is free to use and supported by voluntary contributions.
+Mod Recon is an open-source community utility that monitors Arma Reforger servers and reports changes to their mod manifests. The hosted service is free to use and supported by voluntary contributions.
 
 Currently a small v0.1 pilot monitoring **WCS NA7**, with its first real mod deployment successfully detected.
 
@@ -24,7 +24,7 @@ Run tests with `python -m unittest -v`.
 
 ## Support and contribute
 
-**Support Reforger Watch** — Keep server updates free, open source, and running for everyone.
+**Support Mod Recon** — Keep server updates free, open source, and running for everyone.
 
 The project donation link is coming soon. Bug reports and pull requests are welcome.
 

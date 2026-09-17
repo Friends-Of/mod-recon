@@ -96,7 +96,7 @@ def render_message(label, event, items, donation_url=None):
     lines += ['', f'*Full list of all {total} changes: attached text file.*']
     if donation_url:
         link = donation_url.replace('(', '%28').replace(')', '%29')
-        lines += ['', f'**[Support Reforger Watch]({link})** — Keep server updates free, open source, and running for everyone.']
+        lines += ['', f'**[Support Mod Recon]({link})** — Keep server updates free, open source, and running for everyone.']
 
     description = '\n'.join(lines)
     # Defensive fallback for pathological display names/versions; attachment is complete.
@@ -104,10 +104,11 @@ def render_message(label, event, items, donation_url=None):
         description = '\n'.join([lines[0], lines[1], '', f'Full list of all {total} changes: attached text file.'])
     filename = f"changes-{event['id']}.txt"
     return {
+        'username': 'Mod Recon',
         'allowed_mentions': {'parse': []},
         'embeds': [{'title': f'{plain(label)[:180]} Mod Update', 'description': description,
                     'color': 0x8B9C80, 'timestamp': event['detected_at'],
-                    'footer': {'text': f"Reforger Watch • Event {event['id']}"}}],
+                    'footer': {'text': f"Mod Recon • Event {event['id']}"}}],
         '_text_attachment': {'filename': filename, 'text': full_report(label, event, items)},
     }
 
@@ -121,7 +122,7 @@ def encode_webhook(payload):
     filename = attachment['filename']
     if not re.fullmatch(r'changes-[a-zA-Z0-9-]+\.txt', filename):
         raise ValueError('Invalid attachment filename')
-    boundary = 'reforgerwatch' + uuid.uuid4().hex
+    boundary = 'modrecon' + uuid.uuid4().hex
     payload['attachments'] = [{'id': 0, 'filename': filename, 'description': 'Complete recorded mod changes'}]
     body = (
         f'--{boundary}\r\nContent-Disposition: form-data; name="payload_json"\r\nContent-Type: application/json\r\n\r\n'.encode()

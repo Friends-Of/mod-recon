@@ -32,7 +32,7 @@ class PresentationTests(unittest.TestCase):
         self.assertIn('M1A1 → **8.2.1**', description)
         self.assertIn('41.00 GiB across 41 changed packages', description)
         self.assertIn('Size unavailable for 4', description)
-        self.assertIn('Support Reforger Watch', description)
+        self.assertIn('Support Mod Recon', description)
         self.assertNotIn('No buildlog',description)
         self.assertLess(len(description),1800)
         report = msg['_text_attachment']['text']
@@ -42,7 +42,7 @@ class PresentationTests(unittest.TestCase):
     def test_small_update_lists_exact_before_and_after(self):
         msg = render_message('NA7',EVENT,[item(1,'Package')])
         self.assertIn('8.1.0 → 8.2.0',msg['embeds'][0]['description'])
-        self.assertNotIn('Support Reforger Watch',str(msg))
+        self.assertNotIn('Support Mod Recon',str(msg))
     def test_no_false_majority(self):
         items = [item(n,f'WCS_{n}',str(n)) for n in range(15)]
         msg = render_message('NA7',EVENT,items)

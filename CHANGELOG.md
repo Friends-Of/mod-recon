@@ -4,6 +4,14 @@ Git history starts with the source as it existed on September 17, 2026. Earlier 
 
 ## Unreleased
 
+### Project name
+
+- Renamed Reforger Watch to **Mod Recon**, including documentation and notification branding.
+- Repository renamed to `Friends-Of/mod-recon`.
+- Existing database filenames, installation path, and scheduled-task name are retained to preserve uninterrupted collection and history. Branding loads with the next planned service update.
+
+### Pending presentation update
+
 - Compact notifications for deployments with more than 12 changes.
 - Exact-version WCS/RHS groupings with visible version exceptions.
 - Full change-list attachments with IDs, versions, and stored metadata.
