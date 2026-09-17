@@ -56,12 +56,15 @@ class API:
             with urlopen(Request(self.base + path, headers=self.headers), timeout=15) as response:
                 if response.status != 200:
                     raise RequestFailure(response.status)
-                result = json.loads(response.read(4_000_001))
+                raw = response.read(4_000_001)
+                if len(raw) > 4_000_000:
+                    raise RequestFailure('response exceeds size limit')
+                result = json.loads(raw)
         except HTTPError as exc:
             delay = retry_seconds(exc.headers.get('Retry-After'))
             self.next_allowed = time.time() + delay
             raise RequestFailure(exc.code, delay) from None
-        except (URLError, TimeoutError, OSError, ValueError):
+        except (URLError, TimeoutError, OSError, ValueError, RecursionError):
             raise RequestFailure('network or malformed JSON') from None
         if not isinstance(result, dict) or result.get('status') != 'success':
             raise RequestFailure('unsuccessful response')
@@ -95,6 +98,8 @@ class API:
         for field in ('changelog', 'gameVersion', 'createdAt', 'updatedAt'):
             if detail.get(field) is not None and not isinstance(detail[field], str):
                 raise RequestFailure('invalid metadata field')
+            if isinstance(detail.get(field), str) and len(detail[field].encode('utf-8', errors='surrogatepass')) > 65536:
+                raise RequestFailure('metadata field exceeds size limit')
         return detail
 
 def validate(payload, expected_id):

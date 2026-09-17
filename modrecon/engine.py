@@ -1,5 +1,6 @@
 """Independent server workers with shared upstream budget and webhook pacing."""
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_EXCEPTION
+from contextlib import closing
 import logging
 from pathlib import Path
 import sqlite3
@@ -16,12 +17,12 @@ class Budget:
     def __init__(self,path,minute=50,day=5000,clock=time.time):
         self.path,self.minute,self.day,self.clock = str(path),minute,day,clock
         Path(path).parent.mkdir(parents=True,exist_ok=True)
-        with sqlite3.connect(self.path,timeout=30) as db:
+        with closing(sqlite3.connect(self.path,timeout=30)) as db, db:
             db.executescript('CREATE TABLE IF NOT EXISTS requests(at REAL NOT NULL); CREATE TABLE IF NOT EXISTS cooldown(until REAL);')
 
     def take(self):
         now=self.clock(); midnight=now//86400*86400
-        with sqlite3.connect(self.path,timeout=30) as db:
+        with closing(sqlite3.connect(self.path,timeout=30)) as db, db:
             db.execute('BEGIN IMMEDIATE')
             delay=db.execute('SELECT MAX(until) FROM cooldown').fetchone()[0] or 0
             if delay>now:
@@ -35,7 +36,7 @@ class Budget:
             db.execute('INSERT INTO requests VALUES(?)',(now,))
 
     def defer(self,seconds):
-        with sqlite3.connect(self.path,timeout=30) as db:
+        with closing(sqlite3.connect(self.path,timeout=30)) as db, db:
             db.execute('BEGIN IMMEDIATE')
             old=db.execute('SELECT MAX(until) FROM cooldown').fetchone()[0] or 0
             db.execute('DELETE FROM cooldown')

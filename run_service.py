@@ -18,6 +18,6 @@ if __name__ == '__main__':
         if len(sys.argv)==1:
             sys.argv.append('run')
         main()
-    except Exception:
-        logging.exception('Service stopped unexpectedly')
-        raise
+    except Exception as exc:
+        logging.error('Service stopped unexpectedly (%s)', type(exc).__name__)
+        raise SystemExit(1) from None

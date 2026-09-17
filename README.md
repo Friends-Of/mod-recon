@@ -6,7 +6,7 @@ Mod Recon is an open-source community utility that monitors Arma Reforger server
 
 ## Get started
 
-Requires Python 3.10+. From a downloaded or cloned copy of this repository:
+Requires Python 3.10+; use a current patched release (tested with 3.14.7). From a downloaded or cloned copy of this repository:
 
 ```sh
 python -m pip install .
@@ -28,6 +28,8 @@ Keep this file private. Then:
 modrecon check
 modrecon run
 ```
+
+Treat webhook URLs as passwords; use environment references, keep `.env` out of Git, and restrict access to configuration and history files. YAML is limited to 256 KiB with no anchors or aliases. Upstream responses are limited to 4 MB; oversized metadata fields (over 64 KiB) are marked unavailable. Discord reports limit each displayed field to 8 KiB and attachments to 512 KiB, with visible shortening notices. Stored manifests and existing history are not truncated. Terminal output strips control characters.
 
 The first valid poll creates a silent baseline. Changes require two consecutive valid observations; offline or incomplete responses never become removal alerts. Stop with Ctrl+C. `modrecon status` reads saved status; `modrecon run --once` polls each server once and processes pending alerts.
 

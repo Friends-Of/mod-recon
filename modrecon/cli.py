@@ -1,4 +1,5 @@
 import argparse
+from contextlib import closing
 import json
 import logging
 import os
@@ -12,6 +13,7 @@ import yaml
 from watch import RequestFailure, Unsafe, load_env, validate
 from .config import ConfigError, load, parse, read_raw
 from .engine import Budget, Engine, SharedAPI
+from .text import terminal
 
 
 def lookup(api,query,page=1):
@@ -42,7 +44,7 @@ def add_server(path,api,server_id,name,webhook_env):
     if dataset['stale'] or dataset['warming']:
         raise ConfigError('Cannot verify server while upstream dataset is stale or warming')
     if not name:
-        name=input(f"Display name [{server['name']}]: ").strip() or server['name']
+        name=input(f"Display name [{terminal(server['name'], 180)}]: ").strip() or terminal(server['name'], 180)
     if not webhook_env:
         webhook_env=input('Webhook environment-variable name (for example WCS_WEBHOOK): ').strip()
     if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*',webhook_env):
@@ -64,13 +66,13 @@ def add_server(path,api,server_id,name,webhook_env):
 def status(config):
     if not config.database_path.exists():
         print('No history yet. Run modrecon run.'); return
-    with sqlite3.connect(config.database_path.as_uri()+'?mode=ro',uri=True) as db:
+    with closing(sqlite3.connect(config.database_path.as_uri()+'?mode=ro',uri=True)) as db:
         db.row_factory=sqlite3.Row
         for server in config.servers:
             row=db.execute('SELECT id,last_poll_at,last_poll_status,last_accepted_snapshot_id,candidate_seen_count FROM servers WHERE upstream_server_id=?',(server.server_id,)).fetchone()
             state=dict(row) if row else {}
             state.pop('id',None)
-            print(json.dumps({'name':server.name,'server_id':server.server_id,**state},ensure_ascii=False))
+            print(json.dumps({'name':terminal(server.name),'server_id':server.server_id,**state},ensure_ascii=True))
 
 
 def main(argv=None):
@@ -104,13 +106,12 @@ def main(argv=None):
             api=SharedAPI(base,budget)
             if args.command=='add':
                 name,env=add_server(path,api,args.server_id,args.name,args.webhook_env)
-                print(f'Added {name}. Set {env} in {path.parent / ".env"}, then run modrecon check. No message sent.')
+                print(f'Added {terminal(name)}. Set {env} in {terminal(path.parent / ".env")}, then run modrecon check. No message sent.')
             else:
                 if args.page<1: raise ConfigError('page must be positive')
                 matches,pages=lookup(api,args.query,args.page)
                 for i,server in enumerate(matches,1):
-                    def clean(value): return ' '.join(str(value).split())
-                    print(f"{i}. {clean(server['name'])}\n   {clean(server.get('scenarioName') or 'Scenario unavailable')}\n   {server.get('players','?')}/{server.get('maxPlayers','?')} players | {'online' if server['online'] else 'offline'}\n   ID: {server['id']}\n")
+                    print(f"{i}. {terminal(server['name'])}\n   {terminal(server.get('scenarioName') or 'Scenario unavailable')}\n   {terminal(server.get('players','?'))}/{terminal(server.get('maxPlayers','?'))} players | {'online' if server['online'] else 'offline'}\n   ID: {terminal(server['id'])}\n")
                 if not matches: print('No matches on this page. Try a shorter name or the next page.')
                 print(f'Upstream search page {args.page}/{max(1,pages)}; use --page for more results.')
         elif args.command=='status': status(load(path,require_webhooks=False))
@@ -120,6 +121,6 @@ def main(argv=None):
             else: Engine(config).run(args.once)
     except (ConfigError,RequestFailure,Unsafe,ValueError) as exc:
         # Expected errors are deliberately safe messages, not raw config/HTTP bodies.
-        parser.exit(2,f'Error: {exc}\n')
+        parser.exit(2,f'Error: {terminal(exc)}\n')
     except (OSError,sqlite3.Error):
         parser.exit(2,'Error: local file/database operation failed; check paths and permissions.\n')

@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 import copy
 import json
 import os
@@ -76,7 +77,7 @@ class MultiTests(unittest.TestCase):
                 self.assertTrue(blocked.wait(2)); self.assertTrue(healthy.wait(2))
             finally: release.set()
             future.result(timeout=5)
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db:
             rows=dict(db.execute('SELECT upstream_server_id,last_poll_status FROM servers'))
             self.assertEqual(rows,{'a':'error','b':'ok'})
     def test_failed_webhook_does_not_block_other_destination(self):

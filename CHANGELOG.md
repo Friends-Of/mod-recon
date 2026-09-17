@@ -4,6 +4,8 @@ Git history starts with the source as it existed on September 17, 2026. Earlier 
 
 ## 0.2.0 — Unreleased
 
+- Security hardening: bounded upstream metadata and Discord attachments (including queued legacy messages), terminal control sanitization, safe bounded YAML, and webhook secrets excluded from configuration representations. Regression tests cover oversized-event delivery and queue progress.
+- Validated on Python 3.14.7; explicitly close short-lived SQLite connections to prevent handle leaks.
 - YAML configuration for independently monitored public servers, with shared or separate Discord webhooks and environment-variable secrets.
 - Installable `modrecon find`, `add`, `check`, `run`, and `status` commands.
 - Server search handles WCS punctuation and distinguishes NA1 from NA10. Adding verifies identity without posting; offline servers can be configured.

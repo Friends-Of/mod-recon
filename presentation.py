@@ -3,10 +3,14 @@ from collections import Counter, defaultdict
 import json
 import re
 import uuid
+from modrecon.text import bounded, safe_text, TRUNCATED
+
+MAX_ATTACHMENT_BYTES = 512 * 1024
+MAX_FIELD_BYTES = 8192
 
 
 def plain(value):
-    return ' '.join(str(value or '').split())
+    return ' '.join(safe_text(value).split())
 
 
 def display(value, limit=90):
@@ -34,7 +38,7 @@ def full_report(label, event, items):
                 if item.get(key) is not None:
                     lines.append(f'  {title}: {item[key]}')
             lines.append('')
-    return '\n'.join(lines)
+    return bounded('\n'.join(bounded(line, MAX_FIELD_BYTES) for line in lines), MAX_ATTACHMENT_BYTES)
 
 
 def render_message(label, event, items, donation_url=None):
@@ -102,6 +106,10 @@ def render_message(label, event, items, donation_url=None):
     # Defensive fallback for pathological display names/versions; attachment is complete.
     if len(description) > 3900:
         description = '\n'.join([lines[0], lines[1], '', f'Full list of all {total} changes: attached text file.'])
+    report = full_report(label, event, items)
+    if TRUNCATED in report:
+        description = description.replace(f'Full list of all {total} changes: attached text file.',
+                                          'Recorded changes attached; oversized text shortened. Original records remain in local history.')
     filename = f"changes-{event['id']}.txt"
     return {
         'username': 'Mod Recon',
@@ -109,7 +117,7 @@ def render_message(label, event, items, donation_url=None):
         'embeds': [{'title': f'{plain(label)[:180]} Mod Update', 'description': description,
                     'color': 0x8B9C80, 'timestamp': event['detected_at'],
                     'footer': {'text': f"Mod Recon • Event {event['id']}"}}],
-        '_text_attachment': {'filename': filename, 'text': full_report(label, event, items)},
+        '_text_attachment': {'filename': filename, 'text': report},
     }
 
 
@@ -123,12 +131,17 @@ def encode_webhook(payload):
     if not re.fullmatch(r'changes-[a-zA-Z0-9-]+\.txt', filename):
         raise ValueError('Invalid attachment filename')
     boundary = 'modrecon' + uuid.uuid4().hex
-    payload['attachments'] = [{'id': 0, 'filename': filename, 'description': 'Complete recorded mod changes'}]
+    attachment_text = bounded(attachment['text'], MAX_ATTACHMENT_BYTES)
+    if TRUNCATED in attachment_text:
+        payload['embeds'] = [dict(embed, description=embed.get('description', '')[:3600]
+                                 + '\n\n*Attachment display shortened for safety; original records remain in local history.*')
+                             for embed in payload.get('embeds', [])]
+    payload['attachments'] = [{'id': 0, 'filename': filename, 'description': 'Recorded mod changes (display limits apply)'}]
     body = (
         f'--{boundary}\r\nContent-Disposition: form-data; name="payload_json"\r\nContent-Type: application/json\r\n\r\n'.encode()
         + json.dumps(payload).encode()
         + f'\r\n--{boundary}\r\nContent-Disposition: form-data; name="files[0]"; filename="{filename}"\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n'.encode()
-        + attachment['text'].encode('utf-8')
+        + attachment_text.encode('utf-8')
         + f'\r\n--{boundary}--\r\n'.encode()
     )
     return body, f'multipart/form-data; boundary={boundary}'

@@ -1,5 +1,5 @@
 """Strict, file-based configuration. Secret values never appear in errors."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
 from pathlib import Path
 import re
@@ -31,8 +31,16 @@ UniqueLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, map
 
 def read_raw(path):
     try:
-        raw = yaml.load(Path(path).read_text(encoding='utf-8-sig'), Loader=UniqueLoader)
-    except (yaml.YAMLError, OSError):
+        with Path(path).open('rb') as handle:
+            contents = handle.read(262145)
+        if len(contents) > 262144:
+            raise ConfigError('Configuration exceeds 256 KiB size limit')
+        # Configuration needs neither aliases nor arbitrary object construction.
+        for token in yaml.scan(contents):
+            if isinstance(token, (yaml.tokens.AnchorToken, yaml.tokens.AliasToken)):
+                raise ConfigError('YAML anchors and aliases are not supported')
+        raw = yaml.load(contents.decode('utf-8-sig'), Loader=UniqueLoader)
+    except (yaml.YAMLError, OSError, UnicodeError, RecursionError):
         raise ConfigError('Cannot read configuration; check file path and YAML syntax') from None
     if not isinstance(raw, dict):
         raise ConfigError('Configuration must be a YAML mapping')
@@ -61,7 +69,7 @@ def webhook_valid(value):
 class Server:
     server_id: str
     name: str
-    webhook_url: str
+    webhook_url: str = field(repr=False)
 
 
 @dataclass(frozen=True)
