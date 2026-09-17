@@ -1,4 +1,4 @@
-"""Mod Recon v0.1 — Python 3.10+, standard library only."""
+"""Mod Recon v0.1.1 — Python 3.10+, standard library only."""
 import argparse
 import hashlib
 import json
@@ -257,7 +257,7 @@ class Watch:
     def send(self, payload):
         from presentation import encode_webhook
         body, content_type = encode_webhook(payload)
-        request = Request(self.webhook + ('&' if '?' in self.webhook else '?') + 'wait=true', data=body, headers={'Content-Type': content_type, 'User-Agent': 'mod-recon/0.1'}, method='POST')
+        request = Request(self.webhook + ('&' if '?' in self.webhook else '?') + 'wait=true', data=body, headers={'Content-Type': content_type, 'User-Agent': 'mod-recon/0.1.1'}, method='POST')
         try:
             with urlopen(request, timeout=15) as response:
                 if response.status not in (200, 204):
@@ -293,7 +293,7 @@ def main():
         if parsed.scheme != 'https' or parsed.hostname not in ('discord.com','discordapp.com') or not parsed.path.startswith('/api/webhooks/') or parsed.fragment:
             parser.error('DISCORD_WEBHOOK_URL must be a Discord HTTPS webhook URL')
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
-    watcher = Watch(os.getenv('DATABASE_PATH','./data/reforger-watch.db'), server_id, os.getenv('SERVER_LABEL','WCS NA7'), API(os.getenv('REFORGERMODS_BASE_URL','https://api.reforgermods.net/v2'),os.getenv('CLIENT_NAME','mod-recon/0.1')), webhook, os.getenv('DONATION_URL') or None)
+    watcher = Watch(os.getenv('DATABASE_PATH','./data/reforger-watch.db'), server_id, os.getenv('SERVER_LABEL','WCS NA7'), API(os.getenv('REFORGERMODS_BASE_URL','https://api.reforgermods.net/v2'),os.getenv('CLIENT_NAME','mod-recon/0.1.1')), webhook, os.getenv('DONATION_URL') or None)
     try:
         if args.status:
             print(json.dumps(dict(watcher.row()), indent=2))
