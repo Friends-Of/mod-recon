@@ -18,12 +18,13 @@ from .text import terminal
 
 def lookup(api,query,page=1):
     # Search one discriminating token upstream; filter punctuation-insensitively.
-    # This matches "WCS NA7" to "[NA7] W.C.S." without selecting a server for users.
-    tokens=re.findall(r'[a-z0-9]+',query.lower().replace('w.c.s.','wcs'))
+    # Normalize punctuation so formatted names can be searched safely.
+    normalized=re.sub(r'(?<=[a-z])\.(?=[a-z])','',query.lower())
+    tokens=re.findall(r'[a-z0-9]+',normalized)
     if not tokens: raise ConfigError('Enter a server name to search')
-    seed=max((t for t in tokens if t!='wcs'),key=len,default='W.C.S.')
+    seed=max(tokens,key=lambda token:(any(c.isdigit() for c in token),len(token)),default='server')
     entries,pages=api.search(seed,page)
-    def words(text): return set(re.findall(r'[a-z0-9]+',text.lower().replace('w.c.s.','wcs')))
+    def words(text): return set(re.findall(r'[a-z0-9]+',re.sub(r'(?<=[a-z])\.(?=[a-z])','',text.lower())))
     return [s for s in entries if all(t in words(s['name']) for t in tokens)],pages
 
 
@@ -46,7 +47,7 @@ def add_server(path,api,server_id,name,webhook_env):
     if not name:
         name=input(f"Display name [{terminal(server['name'], 180)}]: ").strip() or terminal(server['name'], 180)
     if not webhook_env:
-        webhook_env=input('Webhook environment-variable name (for example WCS_WEBHOOK): ').strip()
+        webhook_env=input('Webhook environment-variable name (for example EXAMPLE_WEBHOOK): ').strip()
     if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*',webhook_env):
         raise ConfigError('Use an environment-variable name, not the webhook secret')
     raw['servers'].append({'name':name,'server_id':server_id,'webhook_url':'${'+webhook_env+'}'})
