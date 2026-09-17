@@ -1,0 +1,11 @@
+servers:
+  - name: "WCS NA7"
+    server_id: "63722423-d54f-4f1c-972f-4397a6da2d82"
+    webhook_url: "${NA7_WEBHOOK}"
+
+# Add entries with `modrecon add <server-id>`.
+# Reuse the same webhook environment variable for a shared channel.
+poll_interval: 120
+confirmation_polls: 2
+database_path: data/mod-recon.db
+# donation_url: https://donate.stripe.com/4gM3cv5Eodct0N49VTfw400

@@ -1,4 +1,4 @@
-"""Mod Recon v0.1.1 — Python 3.10+, standard library only."""
+"""Mod Recon collector; use `modrecon run` for multi-server configuration."""
 import argparse
 import hashlib
 import json
@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, urlparse, urlencode
 from urllib.request import Request, urlopen
 
 LOG = logging.getLogger('mod-recon')
@@ -56,12 +56,15 @@ class API:
             with urlopen(Request(self.base + path, headers=self.headers), timeout=15) as response:
                 if response.status != 200:
                     raise RequestFailure(response.status)
-                result = json.loads(response.read(4_000_001))
+                raw = response.read(4_000_001)
+                if len(raw) > 4_000_000:
+                    raise RequestFailure('response exceeds size limit')
+                result = json.loads(raw)
         except HTTPError as exc:
             delay = retry_seconds(exc.headers.get('Retry-After'))
             self.next_allowed = time.time() + delay
             raise RequestFailure(exc.code, delay) from None
-        except (URLError, TimeoutError, OSError, ValueError):
+        except (URLError, TimeoutError, OSError, ValueError, RecursionError):
             raise RequestFailure('network or malformed JSON') from None
         if not isinstance(result, dict) or result.get('status') != 'success':
             raise RequestFailure('unsuccessful response')
@@ -69,6 +72,20 @@ class API:
 
     def server(self, server_id):
         return self.get('/servers/' + quote(server_id, safe=''))
+
+    def search(self, query, page=1):
+        result = self.get('/servers?' + urlencode({'search': query, 'page': page, 'perPage':100, 'includeOffline':'true', 'sort':'name'}))
+        dataset, entries, meta = result.get('dataset'), result.get('data'), result.get('meta')
+        if not isinstance(dataset,dict) or any(type(dataset.get(k)) is not bool for k in ('stale','warming')):
+            raise RequestFailure('search freshness schema mismatch')
+        if dataset['stale'] or dataset['warming']:
+            raise RequestFailure('search dataset stale or warming')
+        if not isinstance(entries,list) or not isinstance(meta,dict) or type(meta.get('totalPages')) is not int:
+            raise RequestFailure('search schema mismatch')
+        for entry in entries:
+            if not isinstance(entry,dict) or not isinstance(entry.get('id'),str) or not isinstance(entry.get('name'),str) or type(entry.get('online')) is not bool:
+                raise RequestFailure('search server schema mismatch')
+        return entries, meta['totalPages']
 
     def version(self, mod_id, version):
         result = self.get('/mods/' + quote(mod_id, safe='') + '/versions/' + quote(version, safe=''))
@@ -81,6 +98,8 @@ class API:
         for field in ('changelog', 'gameVersion', 'createdAt', 'updatedAt'):
             if detail.get(field) is not None and not isinstance(detail[field], str):
                 raise RequestFailure('invalid metadata field')
+            if isinstance(detail.get(field), str) and len(detail[field].encode('utf-8', errors='surrogatepass')) > 65536:
+                raise RequestFailure('metadata field exceeds size limit')
         return detail
 
 def validate(payload, expected_id):
@@ -120,16 +139,20 @@ def validate(payload, expected_id):
     return dataset, server, hashlib.sha256(normalized.encode()).hexdigest()
 
 class Watch:
-    def __init__(self, path, server_id, label, api, webhook=None, donation_url=None):
+    def __init__(self, path, server_id, label, api, webhook=None, donation_url=None, confirmation_polls=2):
+        if type(confirmation_polls) is not int or confirmation_polls < 2:
+            raise ValueError('confirmation_polls must be at least 2')
+        self.confirmation_polls = confirmation_polls
         self.donation_url = donation_url
         if donation_url:
             parsed = urlparse(donation_url)
             if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or len(donation_url) > 500 or any(c.isspace() or c in '<>' for c in donation_url):
                 raise ValueError('DONATION_URL must be an HTTPS URL of at most 500 characters')
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(path)
+        self.db = sqlite3.connect(path, timeout=30)
         self.db.row_factory = sqlite3.Row
-        self.db.executescript(Path(__file__).with_name('schema.sql').read_text())
+        from importlib.resources import files
+        self.db.executescript(files('modrecon').joinpath('schema.sql').read_text(encoding='utf-8'))
         self.api, self.webhook = api, webhook
         with self.db:
             self.db.execute('INSERT OR IGNORE INTO servers(id,upstream_server_id,label,created_at) VALUES(?,?,?,?)', (uid(), server_id, label, now()))
@@ -181,6 +204,10 @@ class Watch:
                 self.db.execute('UPDATE servers SET candidate_snapshot_id=?,candidate_seen_count=1 WHERE id=?', (candidate, row['id']))
                 LOG.info('Changed manifest awaits confirmation')
                 return
+            count = row['candidate_seen_count'] + 1
+            if count < self.confirmation_polls:
+                self.db.execute('UPDATE servers SET candidate_seen_count=? WHERE id=?', (count, row['id']))
+                return
             old, new = self.mods(accepted), self.mods(candidate)
             items = []
             for mod_id in sorted(old.keys() | new.keys()):
@@ -211,7 +238,7 @@ class Watch:
             self.reject('error', str(exc))
 
     def process_pending(self, send=None):
-        events = self.db.execute('SELECT * FROM change_events WHERE server_id=? AND delivered_at IS NULL ORDER BY detected_at', (self.row()['id'],)).fetchall()
+        events = self.db.execute('SELECT * FROM change_events WHERE server_id=? AND delivered_at IS NULL ORDER BY detected_at LIMIT 1', (self.row()['id'],)).fetchall()
         for event in events:
             if event['delivery_next_at'] > time.time():
                 break
@@ -257,7 +284,7 @@ class Watch:
     def send(self, payload):
         from presentation import encode_webhook
         body, content_type = encode_webhook(payload)
-        request = Request(self.webhook + ('&' if '?' in self.webhook else '?') + 'wait=true', data=body, headers={'Content-Type': content_type, 'User-Agent': 'mod-recon/0.1.1'}, method='POST')
+        request = Request(self.webhook + ('&' if '?' in self.webhook else '?') + 'wait=true', data=body, headers={'Content-Type': content_type, 'User-Agent': 'mod-recon/0.2.0'}, method='POST')
         try:
             with urlopen(request, timeout=15) as response:
                 if response.status not in (200, 204):
@@ -269,7 +296,7 @@ class Watch:
 
 def load_env(path):
     if Path(path).exists():
-        for line in Path(path).read_text().splitlines():
+        for line in Path(path).read_text(encoding='utf-8-sig').splitlines():
             if line.strip() and not line.lstrip().startswith('#'):
                 key, value = line.split('=', 1)
                 os.environ.setdefault(key.strip(), value.strip())
@@ -293,7 +320,7 @@ def main():
         if parsed.scheme != 'https' or parsed.hostname not in ('discord.com','discordapp.com') or not parsed.path.startswith('/api/webhooks/') or parsed.fragment:
             parser.error('DISCORD_WEBHOOK_URL must be a Discord HTTPS webhook URL')
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
-    watcher = Watch(os.getenv('DATABASE_PATH','./data/reforger-watch.db'), server_id, os.getenv('SERVER_LABEL','WCS NA7'), API(os.getenv('REFORGERMODS_BASE_URL','https://api.reforgermods.net/v2'),os.getenv('CLIENT_NAME','mod-recon/0.1.1')), webhook, os.getenv('DONATION_URL') or None)
+    watcher = Watch(os.getenv('DATABASE_PATH','./data/reforger-watch.db'), server_id, os.getenv('SERVER_LABEL',server_id), API(os.getenv('REFORGERMODS_BASE_URL','https://api.reforgermods.net/v2'),os.getenv('CLIENT_NAME','mod-recon/0.2.0')), webhook, os.getenv('DONATION_URL') or None)
     try:
         if args.status:
             print(json.dumps(dict(watcher.row()), indent=2))

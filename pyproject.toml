@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mod-recon"
+version = "0.2.0"
+description = "Community Arma Reforger mod manifest monitoring"
+requires-python = ">=3.10"
+dependencies = ["PyYAML>=6.0.2,<7"]
+
+[project.scripts]
+modrecon = "modrecon.cli:main"
+
+[tool.setuptools]
+packages = ["modrecon"]
+py-modules = ["watch", "presentation"]
+
+[tool.setuptools.package-data]
+modrecon = ["schema.sql"]
