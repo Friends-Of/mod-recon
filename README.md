@@ -15,11 +15,11 @@ Mod Recon checks public servers through the ReforgerMods API, confirms a change 
 Example:
 
 ```text
-WCS NA7 Mod Update
+Example Conflict #1 Mod Update
 46 server mods changed
 +3 Added · ↑42 Updated · −1 Removed
 
-Major update: most WCS packages moved to 8.2.0
+Major update: most packages moved to 8.2.0
 12.34 GiB across 41 changed packages
 
 Full list of all 46 changes: attached text file.
@@ -34,14 +34,14 @@ Use Python 3.10 or newer (Python 3.14.7 is the current tested runtime):
 
 ```sh
 python -m pip install .
-modrecon find "WCS NA7"
-modrecon add <server-id> --name "WCS NA7" --webhook-env WCS_WEBHOOK
+modrecon find "Everon Alpha"
+modrecon add <server-id> --name "Everon Alpha" --webhook-env EXAMPLE_WEBHOOK
 ```
 
 Create `.env` beside the configuration file and keep it private:
 
 ```text
-WCS_WEBHOOK=your-discord-webhook-url
+EXAMPLE_WEBHOOK=your-discord-webhook-url
 ```
 
 Then validate and run:
@@ -57,12 +57,12 @@ The first valid poll creates a silent baseline. Use `modrecon status` to inspect
 
 ```yaml
 servers:
-  - name: "WCS NA7"
+  - name: "Example Conflict #1"
     server_id: "verified-id-from-find"
-    webhook_url: "${WCS_WEBHOOK}"
-  - name: "WCS NA1"
+    webhook_url: "${EXAMPLE_WEBHOOK}"
+  - name: "Everon Alpha"
     server_id: "another-verified-id"
-    webhook_url: "${WCS_WEBHOOK}"
+    webhook_url: "${EXAMPLE_WEBHOOK}"
 poll_interval: 120
 confirmation_polls: 2
 ```
@@ -83,4 +83,4 @@ Each server has independent state, history, change events, and destination. Serv
 
 Bug reports and pull requests are welcome. Mod Recon v0.2 is self-hosted and configured locally.
 
-Licensed under [MIT](LICENSE). Data comes from the [ReforgerMods API](https://reforgermods.net/arma-reforger-mods-api/v2/). Mod Recon is an independent community project and is not affiliated with Bohemia Interactive, ReforgerMods, or WCS.
+Licensed under [MIT](LICENSE). Data comes from the [ReforgerMods API](https://reforgermods.net/arma-reforger-mods-api/v2/). Mod Recon is an independent community project and is not affiliated with Bohemia Interactive or ReforgerMods.
