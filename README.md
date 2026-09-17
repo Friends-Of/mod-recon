@@ -1,12 +1,36 @@
 # Mod Recon
 
-Mod Recon is an open-source community utility that monitors Arma Reforger servers and reports changes to their mod manifests. The hosted service is free to use and supported by voluntary contributions.
+**Know what changed.**
 
-**v0.2 development:** file-based monitoring for multiple servers. Each has its own baseline, confirmation state, history, and Discord destination. Reuse one webhook for a shared channel, or use separate webhooks. The existing NA7 service remains on v0.1.1 until deployment.
+Mod Recon is an open-source community utility that monitors Arma Reforger servers and reports when their mod manifests change—what was added, removed, or updated.
 
-## Get started
+Free · Open source · Community supported
 
-Requires Python 3.10+; use a current patched release (tested with 3.14.7). From a downloaded or cloned copy of this repository:
+**Current release: v0.2**
+
+## What it does
+
+Mod Recon checks public servers through the ReforgerMods API, confirms a change across consecutive observations, and posts a readable update to Discord. Large deployments are summarized, with the complete recorded change list attached as a text file.
+
+Example:
+
+```text
+WCS NA7 Mod Update
+46 server mods changed
++3 Added · ↑42 Updated · −1 Removed
+
+Major update: most WCS packages moved to 8.2.0
+12.34 GiB across 41 changed packages
+
+Full list of all 46 changes: attached text file.
+Support Mod Recon — Keep server updates free, open source, and running for everyone.
+```
+
+Mod Recon validates upstream data, requires confirmed observations before reporting changes, and includes safeguards for incomplete manifests, rate limits, oversized responses, and Discord delivery failures.
+
+## Quick start
+
+Use Python 3.10 or newer (Python 3.14.7 is the current tested runtime):
 
 ```sh
 python -m pip install .
@@ -14,26 +38,22 @@ modrecon find "WCS NA7"
 modrecon add <server-id> --name "WCS NA7" --webhook-env WCS_WEBHOOK
 ```
 
-`find` shows matching names, scenarios, player counts, online state, and IDs. Use `--page 2` for more results. `add` verifies the chosen ID and writes `modrecon.yaml`; it never chooses a search result automatically. Omit the optional flags for prompts. Repeat `find` and `add` for each server.
-
-Create `.env` beside the configuration file:
+Create `.env` beside the configuration file and keep it private:
 
 ```text
 WCS_WEBHOOK=your-discord-webhook-url
 ```
 
-Keep this file private. Then:
+Then validate and run:
 
 ```sh
 modrecon check
 modrecon run
 ```
 
-Treat webhook URLs as passwords; use environment references, keep `.env` out of Git, and restrict access to configuration and history files. YAML is limited to 256 KiB with no anchors or aliases. Upstream responses are limited to 4 MB; oversized metadata fields (over 64 KiB) are marked unavailable. Discord reports limit each displayed field to 8 KiB and attachments to 512 KiB, with visible shortening notices. Stored manifests and existing history are not truncated. Terminal output strips control characters.
+The first valid poll creates a silent baseline. Use `modrecon status` to inspect saved state or `modrecon run --once` for one poll cycle. See [Operations](docs/OPERATIONS.md) for installation, backups, troubleshooting, and limits.
 
-The first valid poll creates a silent baseline. Changes require two consecutive valid observations; offline or incomplete responses never become removal alerts. Stop with Ctrl+C. `modrecon status` reads saved status; `modrecon run --once` polls each server once and processes pending alerts.
-
-## Configuration
+## Monitor multiple servers
 
 ```yaml
 servers:
@@ -47,24 +67,20 @@ poll_interval: 120
 confirmation_polls: 2
 ```
 
-See [modrecon.example.yaml](modrecon.example.yaml). Use `modrecon --config path/to/config.yaml run` for another file. Paths and `.env` resolve beside that configuration. Restart after changing it. Removing an entry stops monitoring it while retaining its history. No automatic server-ID rebinding.
+Each server has independent state, history, change events, and destination. Servers may share a webhook. See [modrecon.example.yaml](modrecon.example.yaml).
 
-Optional settings: `database_path` (default `data/mod-recon.db`), `donation_url`, `base_url`, `requests_per_minute` (50), and `requests_per_day` (5,000). Limits are conservative local budgets, not additional API entitlement; confirm your upstream allowance before increasing them. Configuration reserves 20% for enrichment/discovery; at defaults, five servers fit a 120-second interval. Increase the interval for larger fleets. The shared request budget and upstream cooldown survive restart.
+## Learn more
 
-Workers poll independently. Slow servers and failing destinations do not block unrelated servers; servers sharing a webhook respect its shared cooldown. Each worker handles at most one queued event per cycle. As with v0.1, an ambiguous Discord success response can cause a duplicate; alerts carry an event ID.
-
-## Upgrade from v0.1.1
-
-Stop the old process first, back up its SQLite database, and set `database_path` to that existing file. Keep the same server ID and webhook. v0.2 reuses its baseline, candidates, events, and pending deliveries without rewriting history. Do not run both versions against the same database. A v0.2 process lock prevents two v0.2 runners sharing a database; it cannot detect a legacy v0.1 runner.
-
-Run tests with `python -m unittest -v`. Development installation: `python -m pip install -e .`.
+- [Architecture](docs/ARCHITECTURE.md) — how polling, confirmation, diffs, enrichment, and delivery work
+- [Operations](docs/OPERATIONS.md) — reliable self-hosting and troubleshooting
+- [Roadmap](docs/ROADMAP.md) — current milestone and possible future directions
+- [Changelog](CHANGELOG.md)
+- [AGENTS.md](AGENTS.md) — contributor and coding-agent guidance
 
 ## Support and contribute
 
 **[Support Mod Recon](https://donate.stripe.com/4gM3cv5Eodct0N49VTfw400)** — Keep server updates free, open source, and running for everyone.
 
-Bug reports and pull requests are welcome. No dashboard, bot installation, or accounts are required.
+Bug reports and pull requests are welcome. Mod Recon v0.2 is self-hosted and configured locally.
 
-[Changelog](CHANGELOG.md) · [MIT License](LICENSE) · [Data source: ReforgerMods](https://reforgermods.net/arma-reforger-mods-api/v2/)
-
-Independent community project; not affiliated with Bohemia Interactive, ReforgerMods, or WCS.
+Licensed under [MIT](LICENSE). Data comes from the [ReforgerMods API](https://reforgermods.net/arma-reforger-mods-api/v2/). Mod Recon is an independent community project and is not affiliated with Bohemia Interactive, ReforgerMods, or WCS.
