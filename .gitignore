@@ -7,3 +7,9 @@ LOCAL_OPERATIONS.md
 __pycache__/
 *.db*
 *.log
+.venv/
+*.egg-info/
+build/
+dist/
+modrecon.yaml
+*.lock

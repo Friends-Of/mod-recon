@@ -4,7 +4,8 @@ from logging.handlers import RotatingFileHandler
 import os
 from pathlib import Path
 
-import watch
+from modrecon.cli import main
+import sys
 
 if __name__ == '__main__':
     root = Path(__file__).resolve().parent
@@ -14,7 +15,9 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s', handlers=[handler])
     logging.info('Mod Recon starting')
     try:
-        watch.main()
+        if len(sys.argv)==1:
+            sys.argv.append('run')
+        main()
     except Exception:
         logging.exception('Service stopped unexpectedly')
         raise

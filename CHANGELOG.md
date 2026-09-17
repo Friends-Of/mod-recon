@@ -2,6 +2,15 @@
 
 Git history starts with the source as it existed on September 17, 2026. Earlier work predates version control; the entries below are documented milestones, not reconstructed commits.
 
+## 0.2.0 — Unreleased
+
+- YAML configuration for independently monitored public servers, with shared or separate Discord webhooks and environment-variable secrets.
+- Installable `modrecon find`, `add`, `check`, `run`, and `status` commands.
+- Server search handles WCS punctuation and distinguishes NA1 from NA10. Adding verifies identity without posting; offline servers can be configured.
+- Independent worker scheduling, configurable confirmation count, persisted shared upstream request budget, and per-webhook pacing.
+- Existing SQLite baselines/history are reusable; duplicate v0.2 processes are blocked per database.
+- Tested against separate live NA7/NA1 baselines and a copy of the v0.1.1 database. Production remains on v0.1.1.
+
 ## 0.1.1 — 2026-09-17
 
 ### Project name
