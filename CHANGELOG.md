@@ -2,7 +2,15 @@
 
 Git history starts with the source as it existed on September 17, 2026. Earlier work predates version control; the entries below are documented milestones, not reconstructed commits.
 
-## 0.2.0 — Unreleased
+## 0.2.9 — Scale and hardening — Unreleased
+
+- Optional environment-based ReforgerMods authentication and live quota verification; anonymous Core remains the default.
+- Shared persistent exact-version enrichment cache with concurrent request coalescing and bounded failure caching.
+- Runtime optional-request caps protect polling's reserved budget; one authoritative detail request per server per cycle remains unchanged.
+- Staggered once-mode validation, authenticated redirect protection, and regression coverage.
+- Five-server, free-tier representative production pilot proposed; activation awaits approval. No 33-server deployment.
+
+## 0.2.0
 
 - Security hardening: bounded upstream metadata and Discord attachments (including queued legacy messages), terminal control sanitization, safe bounded YAML, and webhook secrets excluded from configuration representations. Regression tests cover oversized-event delivery and queue progress.
 - Validated on Python 3.14.7; explicitly close short-lived SQLite connections to prevent handle leaks.

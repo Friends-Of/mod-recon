@@ -8,6 +8,8 @@ Mod Recon monitors the server-reported mod manifests of Arma Reforger servers an
 
 The current milestone is v0.2: configurable multi-server monitoring. It supports independent server state and history, discovery CLI, Discord destinations, confirmation behavior, metadata enrichment, and restart-safe operation. Do not implement roadmap features unless the active request explicitly asks for them.
 
+v0.2.9 is the scale/hardening increment. Core must remain usable on anonymous/free access by default; API credentials are optional. The next proposed pilot is five representative servers at 120 seconds within the verified 5,000/day quota. Production changes require the user's active deployment scope; do not expand to 33 servers or buy capacity implicitly. The hosted bot may use operator-owned paid credentials later.
+
 ## Critical invariants
 
 The server-reported manifest is authoritative for what a monitored server is using. Never infer that a server adopted a Workshop update because a newer Workshop version exists. Workshop metadata is enrichment, not authoritative server state.

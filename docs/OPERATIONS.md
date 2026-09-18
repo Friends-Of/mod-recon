@@ -12,6 +12,12 @@ The YAML file is limited to 256 KiB and does not allow anchors or aliases. Webho
 
 The default poll interval is 120 seconds and confirmation count is 2. Conservative defaults allow 50 upstream requests per minute and 5,000 per day; configuration reserves 20% of the daily and minute budgets for enrichment and discovery. A shared SQLite budget and upstream cooldown survive restarts. Increase limits only when the upstream allowance is verified.
 
+In v0.2.9, optional requests are also capped at that 20% at runtime. At free defaults this is 10/minute and 1,000/day for enrichment, discovery, and quota checks combined. Five servers at 120 seconds require 3,600 base polls/day, leaving 400/day beyond that optional allowance for polling retries and operational headroom. Development clients must use the same budget database to share local accounting; other applications can still consume the upstream IP quota. When enrichment is unavailable or its allowance is exhausted, current events report unavailable metadata and delivery can proceed.
+
+Core needs no paid API key. To opt in, set `REFORGERMODS_API_KEY` in the private `.env` beside the configuration. `api_key_env` may select another environment-variable name; never put a literal key in YAML. Credentials are accepted only for the official HTTPS V2 endpoint, authenticated redirects are blocked, and authentication failures never fall back to anonymous requests. `modrecon quota` checks the live effective allowance. `check` remains offline. Authenticated runners verify quota before creating workers. Optional settings `required_api_plan: developer` (or `pro`) and `minimum_api_daily_quota: 100000` enforce a deployment requirement; mismatch aborts startup, without changing the interval. These are not required for ordinary free self-hosting.
+
+The shared cache is stored at `<database_path>.metadata.db`, alongside the budget at `<database_path>.api.db`. Metadata cache entries expire after 24 hours (failures after 60 seconds), independently of manifest state. No cache warm-up runs for silent baselines. Cache data may be rebuilt; preserve the main history database and the API budget through upgrades. Keep those local files private and out of Git.
+
 Upstream response bodies are capped at 4,000,000 bytes. Individual metadata fields over 64 KiB are marked unavailable. Discord display fields are capped at 8 KiB and text attachments at 512 KiB; shortened output says so, while stored manifests and history remain intact.
 
 ## Workers and restart behavior
@@ -32,12 +38,15 @@ Before upgrading from v0.1.1, stop the old process and make a labeled SQLite bac
 
 ```sh
 modrecon check
+modrecon quota
 modrecon status
 modrecon run --once
 modrecon run
 ```
 
 `check` validates without polling or posting. `status` reads saved state without polling. `run --once` performs one poll and delivery cycle per configured server. For a background Windows service, `run_service.py` writes rotating logs to `data/service.log`.
+
+In v0.2.9, `run --once` also staggers worker starts according to the configured minute allowance. Persistent workers retain interval-based staggering. Once-mode can deliver real pending or confirmed events; validate against a copied database and mocked destinations when testing silent initialization. Quota checks consume an optional upstream request.
 
 If a server does not appear in `find`, try a shorter query or another `--page`. If a webhook fails, verify its environment variable, run `check`, and inspect the queued event status without exposing the URL. If an event remains pending, preserve the database and logs for diagnosis.
 

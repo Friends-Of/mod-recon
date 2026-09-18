@@ -8,6 +8,8 @@ Free · Open source · Community supported
 
 **Current release: v0.2**
 
+Mod Recon Core works with free, anonymous API access. Self-hosters can optionally supply their own ReforgerMods API key. A future hosted Discord bot would use the operator's credentials when its scale requires them.
+
 ## What it does
 
 Mod Recon checks public servers through the ReforgerMods API, confirms a change across consecutive observations, and posts a readable update to Discord. Large deployments are summarized, with the complete recorded change list attached as a text file.
