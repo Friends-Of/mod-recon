@@ -1,6 +1,6 @@
 # Architecture
 
-Mod Recon uses the public ReforgerMods V2 API as its upstream source. The API supplies server discovery results, server-reported manifests, and Workshop version metadata.
+Mod Recon Core uses the public ReforgerMods V2 API as its upstream source. The API supplies server discovery results, server-reported manifests, and Workshop version metadata. Discovery supports choosing a monitor; it is not a general server-browser product.
 
 ```text
 ReforgerMods API -> Poll / Validate -> Candidate Manifest -> Confirmation
@@ -36,8 +36,14 @@ SQLite stores server state, accepted and candidate snapshots, snapshot mods, cha
 
 Each server owns its state and event history. Request budgeting is shared across workers, and posts sharing one webhook are serialized with a cooldown. A database lock prevents two v0.2 processes from using the same database concurrently.
 
-v0.2.9 development retains one authoritative server-detail request per unique configured ID per cycle. A separate SQLite metadata cache is keyed by uppercase Workshop ID and the exact version string. Workers coalesce concurrent lookups of the same key. Valid metadata lasts 24 hours; failed lookups are negatively cached for 60 seconds. Cache hits do not spend API requests. Metadata is fetched only for change enrichment, not to initialize a baseline, and never determines server adoption.
+v0.2.9 retains one authoritative server-detail request per unique configured ID per cycle. A separate SQLite metadata cache is keyed by uppercase Workshop ID and the exact version string. Workers coalesce concurrent lookups of the same key within an engine. Valid metadata lasts 24 hours; failed lookups are negatively cached for 60 seconds. Cache hits do not spend API requests. Metadata is fetched only for change enrichment, not to initialize a baseline, and never determines server adoption.
 
 Polling and optional requests share total request accounting. Optional work (enrichment, discovery, quota checks) additionally has a hard cap of 20% of each configured minute/day allowance, protecting 80% for polling. The existing configuration check requires scheduled base polling to fit that 80%. This prevents enrichment from consuming polling's reserved capacity; it does not protect against upstream outages or other applications sharing the same IP/account quota.
 
 For limits, restart behavior, migrations, and troubleshooting, see [Operations](OPERATIONS.md).
+
+## Planned event boundary
+
+The current implementation persists events, but `Watch.process_pending` still combines enrichment, rendering, and delivery retry state. `Engine.worker` runs polling and delivery in the same worker; a rendered Discord payload and one delivery status live on each event. `presentation.py` also computes supported package-family groupings. These are existing implementation constraints, not a stable integration interface.
+
+v0.3 will expose a normalized persisted ChangeEvent, with delivery-specific payloads and acknowledgements owned by adapters. See the [ChangeEvent proposal](CHANGE_EVENTS.md) for the planned schema and compatibility path. Core retains full monitoring, history, metadata, and webhook capabilities for self-hosters.

@@ -1,6 +1,6 @@
 # Operations
 
-This is the operator reference for a self-hosted Mod Recon v0.2 instance.
+This is the operator reference for self-hosted Mod Recon Core, including v0.2.9 hardening.
 
 ## Configuration and secrets
 
@@ -35,6 +35,26 @@ History is stored in the configured SQLite database (default `data/mod-recon.db`
 Before upgrading from v0.1.1, stop the old process and make a labeled SQLite backup. Point v0.2 at the existing database to reuse its baseline, candidates, events, and pending deliveries. Never run both versions against that file.
 
 ## Useful commands
+
+### Verified backup before an upgrade
+
+Stop the runner and other clients using the same history/budget files first. Then run `modrecon backup --output data/backups/before-upgrade` with a new private destination directory. The command refuses an active v0.2 runner, missing history, or an existing destination. It uses SQLite's backup API, verifies integrity and foreign-key references, and writes `complete.json` with SHA-256 checksums only after all included files pass. It copies history and any existing API-budget database; the rebuildable metadata cache is omitted. It makes no API requests and sends no notifications.
+
+Check the command exit code before proceeding. A directory without `complete.json` is an incomplete backup, even if individual files exist. Keep it for diagnosis and choose a new directory for a retry. Protect backups like the original history database. Save private configuration and service definitions separately; the command does not copy secrets or service settings. A legacy v0.1 runner does not hold the v0.2 lock, so it must be stopped explicitly.
+
+In PowerShell, `$ErrorActionPreference` alone does not reliably stop execution after a failed native executable. Use an explicit gate:
+
+```powershell
+modrecon backup --output data/backups/before-upgrade
+if ($LASTEXITCODE -ne 0) { throw 'Backup failed; deployment stopped.' }
+modrecon check
+if ($LASTEXITCODE -ne 0) { throw 'Configuration failed; deployment stopped.' }
+# Only now perform the planned upgrade/validation/start steps.
+```
+
+To restore, stop all clients, preserve the current files separately, and restore `history.db` to the configured database path and `api-budget.db` to that path plus `.api.db`. Use a matching code version. Verify the recorded checksums, database integrity, and configuration before starting; restore the budget to retain quota accounting. The v0.2.9 backup command changes no database schema.
+
+### Monitoring
 
 ```sh
 modrecon check
