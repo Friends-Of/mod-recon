@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlparse, urlencode
-from urllib.request import Request, urlopen
+from urllib.request import Request, urlopen, build_opener, HTTPRedirectHandler
 
 LOG = logging.getLogger('mod-recon')
 
@@ -42,10 +42,19 @@ def retry_seconds(value):
         except (ValueError, TypeError, OverflowError):
             return 0
 
+class NoCredentialRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise RequestFailure('authenticated redirects disabled')
+
+
 class API:
     """All upstream schema and network behavior stays in this adapter."""
-    def __init__(self, base, client):
+    def __init__(self, base, client, api_key=None):
         self.base = base.rstrip('/')
+        if api_key and (self.base != 'https://api.reforgermods.net/v2'
+                        or not isinstance(api_key, str) or any(c.isspace() or ord(c)<33 or ord(c)>126 for c in api_key)):
+            raise ValueError('API credentials require the official HTTPS V2 endpoint and a valid token')
+        self._api_key = api_key
         self.headers = {'User-Agent': client, 'X-API-Client': client}
         self.next_allowed = 0
 
@@ -53,7 +62,12 @@ class API:
         if time.time() < self.next_allowed:
             raise RequestFailure('cooldown', self.next_allowed - time.time())
         try:
-            with urlopen(Request(self.base + path, headers=self.headers), timeout=15) as response:
+            headers = dict(self.headers)
+            if self._api_key:
+                headers['Authorization'] = 'Bearer ' + self._api_key
+            request = Request(self.base + path, headers=headers)
+            open_request = build_opener(NoCredentialRedirect()).open if self._api_key else urlopen
+            with open_request(request, timeout=15) as response:
                 if response.status != 200:
                     raise RequestFailure(response.status)
                 raw = response.read(4_000_001)
@@ -63,9 +77,12 @@ class API:
         except HTTPError as exc:
             delay = retry_seconds(exc.headers.get('Retry-After'))
             self.next_allowed = time.time() + delay
+            exc.close()
             raise RequestFailure(exc.code, delay) from None
         except (URLError, TimeoutError, OSError, ValueError, RecursionError):
             raise RequestFailure('network or malformed JSON') from None
+        if path == '/rate-limits' and isinstance(result, dict):
+            return result
         if not isinstance(result, dict) or result.get('status') != 'success':
             raise RequestFailure('unsuccessful response')
         return result
@@ -284,7 +301,7 @@ class Watch:
     def send(self, payload):
         from presentation import encode_webhook
         body, content_type = encode_webhook(payload)
-        request = Request(self.webhook + ('&' if '?' in self.webhook else '?') + 'wait=true', data=body, headers={'Content-Type': content_type, 'User-Agent': 'mod-recon/0.2.0'}, method='POST')
+        request = Request(self.webhook + ('&' if '?' in self.webhook else '?') + 'wait=true', data=body, headers={'Content-Type': content_type, 'User-Agent': 'mod-recon/0.2.9'}, method='POST')
         try:
             with urlopen(request, timeout=15) as response:
                 if response.status not in (200, 204):

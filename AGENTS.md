@@ -6,7 +6,9 @@ Mod Recon monitors the server-reported mod manifests of Arma Reforger servers an
 
 ## Current milestone
 
-The current milestone is v0.2: configurable multi-server monitoring. It supports independent server state and history, discovery CLI, Discord destinations, confirmation behavior, metadata enrichment, and restart-safe operation. Do not implement roadmap features unless the active request explicitly asks for them.
+v0.2 multi-server monitoring is complete. v0.2.9 production hardening is current; v0.3 will establish normalized ChangeEvents independently of delivery. Do not implement roadmap features unless the active request explicitly asks for them.
+
+Core must remain usable on anonymous/free access by default; upstream API credentials are optional. Production changes require the user's explicit deployment scope. Preserve existing database identity, history, and configuration during development.
 
 ## Critical invariants
 
@@ -18,7 +20,11 @@ Before modifying persistence, polling, confirmation, event generation, delivery,
 
 ## Scope discipline
 
-Do not opportunistically build a web dashboard, hosted account system, Discord installation bot, AI summaries, mod explanations, sponsorship or advertising, public website, or unrelated analytics. Those require an explicit milestone request.
+Core owns observation, validation, confirmation, accepted state, diffing, exact mod/version identity, reliable metadata enrichment, history, structured events, webhook delivery, CLI/self-host configuration, API budgeting, persistence, and integration interfaces.
+
+Guild accounts, commercial subscriptions, paid plans, billing, entitlements, premium gating, hosted administration, dashboards, advertisements, public discovery products, AI summaries, and companion apps are outside this repository's scope. Keep separate product plans outside the public repository. Do not restrict useful Core capabilities for self-hosters.
+
+Version strings are opaque. Grouping requires explicit evidence; package-size totals are not actual download sizes. Preserve the existing license.
 
 ## Development expectations
 

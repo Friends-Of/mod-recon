@@ -2,7 +2,19 @@
 
 Git history starts with the source as it existed on September 17, 2026. Earlier work predates version control; the entries below are documented milestones, not reconstructed commits.
 
-## 0.2.0 — Unreleased
+## 0.2.9 — Production hardening — Release candidate
+
+Prepared for merge and release validation. The existing production soak remains on the earlier v0.2.9 build; backup-command and documentation changes do not imply a production upgrade.
+
+- Optional environment-based ReforgerMods authentication and live quota verification; anonymous Core remains the default.
+- Shared persistent exact-version enrichment cache with concurrent request coalescing and bounded failure caching.
+- Runtime optional-request caps protect polling's reserved budget; one authoritative detail request per server per cycle remains unchanged.
+- Staggered once-mode validation, authenticated redirect protection, and regression coverage.
+- A representative five-server deployment is undergoing sustained production testing on anonymous API access.
+- Public roadmap and contributor guidance focus on self-hostable Core; normalized ChangeEvents are the v0.3 integration goal.
+- Added an offline `backup` command with verified SQLite copies, no-overwrite protection, active-runner refusal, and a completion marker; deployment instructions explicitly gate on failure.
+
+## 0.2.0
 
 - Security hardening: bounded upstream metadata and Discord attachments (including queued legacy messages), terminal control sanitization, safe bounded YAML, and webhook secrets excluded from configuration representations. Regression tests cover oversized-event delivery and queue progress.
 - Validated on Python 3.14.7; explicitly close short-lived SQLite connections to prevent handle leaks.
@@ -11,7 +23,7 @@ Git history starts with the source as it existed on September 17, 2026. Earlier 
 - Server search handles WCS punctuation and distinguishes NA1 from NA10. Adding verifies identity without posting; offline servers can be configured.
 - Independent worker scheduling, configurable confirmation count, persisted shared upstream request budget, and per-webhook pacing.
 - Existing SQLite baselines/history are reusable; duplicate v0.2 processes are blocked per database.
-- Tested against separate live NA7/NA1 baselines and a copy of the v0.1.1 database. Production remains on v0.1.1.
+- Tested against separate live NA7/NA1 baselines and a copy of the v0.1.1 database before production adoption.
 
 ## 0.1.1 — 2026-09-17
 
