@@ -2,6 +2,17 @@
 
 Git history starts with the source as it existed on September 17, 2026. Earlier work predates version control; the entries below are documented milestones, not reconstructed commits.
 
+## 0.3.0 — Change Events — Unreleased
+
+- Immutable schema-v1 ChangeEvents with stable IDs, publication sequences, exact versions, nullable package sizes, captured identity/timestamps, provenance, and supported evidence-based grouping.
+- Additive history migration (`PRAGMA user_version=1`) and offline `modrecon migrate`; backfill uses stored facts only, with unknown historical fields explicit.
+- Independent polling, publication/enrichment, and webhook delivery workers. Legacy frozen payloads and delivered status are retained in an adapter outbox.
+- Delivery-free `Core`/`Monitor` integration API, unique-server reconciliation, human-readable discovery, status, and bounded resumable event reads.
+- Explicit upstream polling, discovery, verification, and enrichment purposes; optional requests cannot borrow polling's reserve.
+- Crash/restart, migration rollback/idempotence, immutable publication, cursor ordering, legacy delivery, backup/restore, and blocked-network regression coverage.
+
+The migration requires a verified backup and a stopped runner. This candidate does not imply deployment or a production database upgrade.
+
 ## 0.2.9 — Production hardening — Release candidate
 
 Prepared for merge and release validation. The existing production soak remains on the earlier v0.2.9 build; backup-command and documentation changes do not imply a production upgrade.

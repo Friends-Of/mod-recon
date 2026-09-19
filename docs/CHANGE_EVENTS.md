@@ -1,6 +1,6 @@
-# ChangeEvent proposal — v0.3
+# ChangeEvent contract — v0.3
 
-Status: design proposal, not an implemented API. Existing v0.2.9 polling and webhook operation remain supported. Schema versions below describe serialized events, independently of package release numbers.
+Status: implemented release candidate, not yet deployed to production. Existing v0.2.9 polling and webhook behavior remain supported. Schema versions below describe serialized events, independently of package release numbers. The history database uses `PRAGMA user_version=1`.
 
 ## Authority and pipeline
 
@@ -12,7 +12,7 @@ server observation -> validation -> confirmation -> diff
 
 Preserve `validate`, manifest hashing, candidate confirmation, accepted snapshots, and the existing transaction that commits a diff and advances accepted state. Never use Workshop publication as evidence of server adoption. Silent baselines stay silent. Version strings are opaque; compare exact strings without sorting them as semantic versions.
 
-## Proposed serialized model
+## Serialized model (schema version 1)
 
 This is an illustrative shape, not a historical observation:
 
@@ -20,6 +20,7 @@ This is an illustrative shape, not a historical observation:
 {
   "schema_version": 1,
   "event_id": "existing-or-new-stable-uuid",
+  "sequence": 1,
   "server_id": "persistent-upstream-id",
   "server_name": "Everon Alpha",
   "server_display_name": "Example Conflict #1",
@@ -41,6 +42,7 @@ This is an illustrative shape, not a historical observation:
       "source": "reforgermods.v2.mod_version",
       "requested_version": "release-A",
       "retrieved_at": "2026-09-18T12:02:01Z",
+      "reason": null,
       "changelog": null,
       "game_version": null,
       "upstream_created_at": null,
@@ -81,7 +83,7 @@ Groups are optional facts with `rule_id`, `rule_version`, explicit member mod ID
 
 ## Persistence and consumption
 
-Keep existing normalized `change_events`, `change_items`, manifests, and snapshots as source records. Add a versioned event publication table, conceptually:
+Existing normalized `change_events`, `change_items`, manifests, and snapshots remain source records. The additive migration adds nullable captured identity/provenance fields to events, `metadata_retrieved_at` to items, a webhook outbox, and this publication table:
 
 ```text
 event_publications(sequence INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -93,24 +95,24 @@ Confirmation atomically persists facts and advances accepted state as today. A r
 
 Assign the publication sequence only when the ready event is inserted. A consumer must never skip an unfinished lower-sequence event because a later event became ready first. Preserve confirmation order within each server by finalizing its oldest pending event first; different servers can progress independently. A crash before publication resumes finalization; a unique event ID prevents a second publication. Commit publication and any local webhook outbox insertion atomically.
 
-Proposed bounded library methods: `get_event(event_id)` and `iter_events(after_sequence, limit)`, returning immutable records and continuation sequence. Consumers own their durable cursor; reads do not mark globally delivered. An event can be consumed by multiple adapters. Retain publication records for the initial release; introduce pruning only with an explicit retention/cursor policy. No public HTTP service is required.
+Library methods: `get_event(event_id)` and `iter_events(after_sequence=0, limit=100)`. A page is a list of detached documents; its last event's `sequence` is the continuation cursor. An empty page retains the caller's previous cursor. Limit is 1–1,000. Zero explicitly denotes the beginning of stored history; a new live-only consumer first drains existing pages without acting on them, persists the resulting cursor, then processes future pages. Reads do not mark globally delivered. Unknown event-schema versions fail explicitly. SQLite triggers prohibit mutation/deletion of publications; callers may freely mutate returned copies. No public HTTP service is required.
 
 ## Webhook compatibility
 
-Add a webhook outbox with a logical destination key, event reference, frozen rendered payload, delivered timestamp, next retry time, and safe error code. A destination key refers to local configuration; never persist the webhook secret. One destination failure must not mark the event delivered for all consumers. Retain existing limits, attachments, allowed-mention suppression, donation option, and retry semantics.
+`webhook_outbox` stores a destination fingerprint, event reference, frozen rendered payload, delivered timestamp, next retry time, and safe error. The fingerprint is SHA-256 of the configured webhook URL, not the secret itself. Changed URLs cannot silently receive old pending messages. Legacy rows initially use a per-server placeholder, bound once when a watcher starts with the verified unchanged configuration. One destination failure does not mark the event delivered for external consumers. Existing limits, attachments, allowed-mention suppression, donation option, and retry semantics remain intact.
 
-Refactor `presentation.render_message` to consume ChangeEvent. It formats prepared facts and groups; it does not poll, diff, query metadata, or establish grouping semantics. Route transport and retries through a webhook adapter. Run delivery independently from polling so a slow Discord request cannot occupy the server observation worker. Keep bounded workers and shared budget/cache objects; avoid a framework or message broker.
+`presentation.render_change_event` consumes ChangeEvent and formats prepared facts/groups through the compatible renderer. It does not poll, diff, or query metadata. Grouping lives in Core. `modrecon.webhook` owns delivery and retries. Persistent engines allocate polling, finalization, and (when configured) webhook threads separately per server, with shared budget/cache objects. Once-mode is finite and performs those stages sequentially for each server; it does not promise background polling while a one-shot delivery is in progress.
 
-For existing queued records, preserve frozen `payload_json` exactly, including older JSON-only payloads. Import existing delivered status into the legacy webhook destination's outbox, without resending historical messages. New programmatic consumers choose an explicit starting cursor; the default for a newly attached live consumer is current, not replay-all.
+Existing queued records preserve frozen `payload_json` exactly, including older JSON-only payloads. Existing delivered status is imported into the legacy webhook destination's outbox, without resending historical messages. Programmatic consumers control replay through their own cursor and must not treat the initial history read as permission to notify new destinations.
 
 ## Migration and compatibility
 
 1. Stop writers, create and verify a backup, then rehearse the migration on a copy. Refuse startup on a schema newer than the binary understands.
-2. Add a schema version ledger, publication/outbox tables, and nullable observation/provenance fields in an idempotent transaction. Preserve all existing server/event/snapshot IDs, candidates, accepted pointers, change items, and delivery errors.
+2. `modrecon.storage.migrate` uses a `PRAGMA user_version` ledger, publication/outbox tables, and nullable observation/provenance fields in an idempotent transaction. All existing server/event/snapshot IDs, candidates, accepted pointers, change items, and delivery errors are preserved. `modrecon migrate` exposes this offline operation under the process lock. Starting v0.3 also runs the same migration, so production must be backed up before any new runner is started.
 3. Derive legacy first observation from the accepted candidate snapshot's `observed_at`; map legacy `detected_at` to confirmation time. Do not invent the confirmation scan timestamp, confirmation threshold, metadata retrieval time, or historical upstream name where they were not recorded. Mark missing facts explicitly. Capture them directly for new events.
-4. Backfill from stored metadata without live refetches or changing event identity. Treat legacy `enrichment_done` as finalization evidence; resume unfinished work through the finalizer. Record a deterministic publication order and start new consumers after the migrated high-water mark unless replay was explicitly requested.
+4. Backfill every legacy event from stored metadata without live refetches or changing event identity, ordered by stored confirmation timestamp then event ID. Legacy unfinished enrichment is frozen as the stored `not_requested`/unknown facts and marked finalized; it does not trigger an API fetch. This implements the no-historical-refetch requirement. New v0.3 interrupted enrichment resumes normally. Unknown historical upstream/display names remain null rather than adopting a possibly renamed current label. The webhook adapter may use its current configured label when no frozen legacy payload exists.
 5. Backfill local webhook outbox status/payloads transactionally. Verify a queued event retries once while previously delivered events remain delivered. Persist destination mapping when configurations change; do not silently reroute old pending messages.
-6. Keep existing YAML/CLI paths operational. Allow a delivery-free library configuration; webhook CLI setup stays convenient and continues to support multiple servers and shared destinations. Keep legacy columns during the compatibility window; publish deprecation separately.
+6. Existing YAML/CLI paths remain operational. `Core` provides delivery-free library configuration and `Monitor` contains only server ID, display name, and numeric cadence. Legacy delivery columns remain mirrored for compatibility; adapters use the outbox. See [Integration](INTEGRATION.md) for the exact API and lifecycle.
 
 Rollback is restoration of the verified database and matching binary while writers are stopped, not an untested reverse migration. Avoid divergent writers during rollback. v0.2.9 needs no history migration; these additive migrations belong to the future v0.3 implementation.
 

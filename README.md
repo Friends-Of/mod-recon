@@ -6,7 +6,7 @@ Mod Recon Core is an open-source, self-hostable tool that monitors Arma Reforger
 
 Free · Open source · Community supported
 
-**Completed milestone: v0.2 · Current stabilization: v0.2.9**
+**Stable engine: v0.2 · Hardening: v0.2.9 · v0.3 ChangeEvents: release candidate**
 
 Core works with free, anonymous API access. Self-hosters can optionally supply their own ReforgerMods API key. No paid API account is required.
 
@@ -74,6 +74,8 @@ Each server has independent state, history, change events, and destination. Serv
 ## Learn more
 
 - [Architecture](docs/ARCHITECTURE.md) — how polling, confirmation, diffs, enrichment, and delivery work
+- [Core integration](docs/INTEGRATION.md) — delivery-free monitoring and resumable ChangeEvent consumption
+- [ChangeEvent contract](docs/CHANGE_EVENTS.md) — event data and migration compatibility
 - [Operations](docs/OPERATIONS.md) — reliable self-hosting and troubleshooting
 - [Roadmap](docs/ROADMAP.md) — current milestone and possible future directions
 - [Changelog](CHANGELOG.md)

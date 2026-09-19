@@ -1,5 +1,5 @@
 """Discord presentation only: consumes persisted events without changing them."""
-from collections import Counter, defaultdict
+from modrecon.events import group_items
 import json
 import re
 import uuid
@@ -41,7 +41,22 @@ def full_report(label, event, items):
     return bounded('\n'.join(bounded(line, MAX_FIELD_BYTES) for line in lines), MAX_ATTACHMENT_BYTES)
 
 
-def render_message(label, event, items, donation_url=None):
+def render_change_event(event, donation_url=None, fallback_label=None):
+    items=[]
+    for kind in ('added','removed','updated'):
+        for item in event[kind]:
+            metadata=item['metadata']
+            items.append({'change_type':kind,'mod_id':item['mod_id'],'mod_name':item['name'],
+                          'before_version':item['old_version'],'after_version':item['new_version'],
+                          'size_bytes':item['new_package_size_bytes'],
+                          'metadata_status':'complete' if metadata['status']=='available' else metadata['status'],
+                          'changelog':metadata['changelog'],'game_version':metadata['game_version'],
+                          'created_at':metadata['upstream_created_at'],'updated_at':metadata['upstream_updated_at']})
+    return render_message(event['server_display_name'] or fallback_label or event['server_id'],
+                          {'id':event['event_id'],'detected_at':event['confirmed_at']},items,donation_url,event['groups'])
+
+
+def render_message(label, event, items, donation_url=None, prepared_groups=None):
     items = sorted((dict(i) for i in items), key=lambda i: (i['change_type'], i['mod_id']))
     groups = {kind: [i for i in items if i['change_type'] == kind] for kind in ('added', 'updated', 'removed')}
     total = len(items)
@@ -50,24 +65,10 @@ def render_message(label, event, items, donation_url=None):
              f"**+{len(groups['added'])} Added · ↑{len(groups['updated'])} Updated · −{len(groups['removed'])} Removed**", '']
 
     if large:
-        # Group only literal package-name prefixes and exact version strings.
-        # This reports observed versions, never infers release contents.
-        families = defaultdict(list)
-        for item in groups['updated']:
-            name = item['mod_name'] or ''
-            family = 'WCS' if name.startswith('WCS_') else 'RHS' if name.startswith('RHS - ') else None
-            if family:
-                families[family].append(item)
         covered = set()
-        for family, members in sorted(families.items()):
-            if len(members) < 3:
-                continue
-            counts = Counter(i['after_version'] for i in members)
-            version, count = counts.most_common(1)[0]
-            if count < 3 or count <= len(members) / 2:
-                continue
-            lines.append(f"{count} of {len(members)} updated {family} packages → **{display(version, 40)}**")
-            covered.update(i['mod_id'] for i in members if i['after_version'] == version)
+        for group in prepared_groups if prepared_groups is not None else group_items(items):
+            lines.append(f"{len(group['member_mod_ids'])} of {group['family_updated_count']} updated {group['family']} packages → **{display(group['version'], 40)}**")
+            covered.update(group['member_mod_ids'])
         remaining = [i for i in groups['updated'] if i['mod_id'] not in covered]
         for item in remaining[:3]:
             lines.append(f"{display(item['mod_name'], 65)} → **{display(item['after_version'], 40)}**")

@@ -1,6 +1,7 @@
 """Independent server workers with shared upstream budget and webhook pacing."""
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_EXCEPTION
 from contextlib import closing
+from contextvars import ContextVar
 import logging
 import re
 from pathlib import Path
@@ -57,19 +58,34 @@ class Budget:
 
 class SharedAPI(API):
     def __init__(self,base, budget, api_key=None, cache=None):
-        super().__init__(base,'mod-recon/0.2.9',api_key)
+        super().__init__(base,'mod-recon/0.3.0',api_key)
         self.budget=budget
         self.cache=cache
         self.pace_lock=threading.Lock()
         self.next_request=0
+        self.purpose=ContextVar('request_purpose',default='optional')
+
+    def _call(self,purpose,method,*args):
+        token=self.purpose.set(purpose)
+        try: return method(*args)
+        finally: self.purpose.reset(token)
+
+    def server(self,server_id):
+        return self._call('poll',super().server,server_id)
+
+    def verify_server(self,server_id):
+        return self._call('verification',super().server,server_id)
+
+    def search(self,query,page=1):
+        return self._call('discovery',super().search,query,page)
 
     def version(self,mod_id,version):
         if self.cache:
-            return self.cache.get(mod_id,version,super().version)
-        return super().version(mod_id,version)
+            return self.cache.get(mod_id,version,lambda mid,ver:self._call('enrichment',super(SharedAPI,self).version,mid,ver))
+        return self._call('enrichment',super().version,mod_id,version)
 
     def get(self,path):
-        purpose='poll' if re.fullmatch(r'/servers/[A-Za-z0-9_-]+',path) else 'optional'
+        purpose=self.purpose.get()
         # Smooth requests across threads; do not hold this lock during network I/O.
         with self.pace_lock:
             time.sleep(max(0,self.next_request-time.monotonic()))
@@ -159,26 +175,58 @@ class Engine:
         self.setup_lock=threading.Lock()
         self.stop=threading.Event()
 
-    def worker(self,server,once=False,offset=0):
-        if self.stop.wait(offset): return
+    def maintenance(self,server,stage,stop):
+        watch=None
+        try:
+            while not stop.is_set():
+                try:
+                    if watch is None:
+                        with self.setup_lock:
+                            watch=Watch(self.config.database_path,server.server_id,server.name,self.api,
+                                        server.webhook_url,self.config.donation_url,self.config.confirmation_polls)
+                    if stage=='publish': watch.finalize_pending()
+                    elif server.webhook_url:
+                        watch.deliver_pending(lambda payload:self.destinations.send(watch,payload))
+                except Exception as exc:
+                    LOG.error('Server %s %s failed (%s); retry',server.server_id,stage,type(exc).__name__)
+                stop.wait(1)
+        finally:
+            if watch is not None: watch.db.close()
+
+    def worker(self,server,once=False,offset=0,stop_event=None,poll_interval=None):
+        stop=stop_event if stop_event is not None else self.stop
+        if stop.wait(offset): return
         # Each worker creates, owns, and closes its SQLite connection.
         with self.setup_lock:
             watch=Watch(self.config.database_path,server.server_id,server.name,self.api,
                         server.webhook_url,self.config.donation_url,self.config.confirmation_polls)
+        services=[]
+        if not once:
+            for stage in ('publish','deliver'):
+                if stage=='deliver' and not server.webhook_url: continue
+                thread=threading.Thread(target=self.maintenance,args=(server,stage,stop),name=f'modrecon-{stage}-{server.server_id}')
+                thread.start();services.append(thread)
         try:
-            while not self.stop.is_set():
+            with watch.db:
+                watch.db.execute('UPDATE servers SET enabled=1 WHERE upstream_server_id=?',(server.server_id,))
+            while not stop.is_set():
                 started=time.monotonic()
                 try:
                     watch.poll()
-                    watch.process_pending(lambda payload:self.destinations.send(watch,payload))
+                    if once:
+                        watch.finalize_pending()
+                        if server.webhook_url:
+                            watch.deliver_pending(lambda payload:self.destinations.send(watch,payload))
                 except Exception as exc:
                     # Do not log exception text: unexpected HTTP errors can contain secrets.
                     LOG.error('Server %s worker failed (%s); retry next poll',server.server_id,type(exc).__name__)
                     watch.reject('error','Worker failure; see server worker log')
                     if once: raise
                 if once: return
-                self.stop.wait(max(0,self.config.poll_interval-(time.monotonic()-started)))
+                stop.wait(max(0,(poll_interval if poll_interval is not None else self.config.poll_interval)-(time.monotonic()-started)))
         finally:
+            if not once: stop.set()
+            for thread in services: thread.join()
             watch.db.close()
 
     def run(self,once=False):
