@@ -2,7 +2,9 @@
 
 Git history starts with the source as it existed on September 17, 2026. Earlier work predates version control; the entries below are documented milestones, not reconstructed commits.
 
-## 0.2.9 — Production hardening — Current stabilization
+## 0.2.9 — Production hardening — Release candidate
+
+Prepared for merge and release validation. The existing production soak remains on the earlier v0.2.9 build; backup-command and documentation changes do not imply a production upgrade.
 
 - Optional environment-based ReforgerMods authentication and live quota verification; anonymous Core remains the default.
 - Shared persistent exact-version enrichment cache with concurrent request coalescing and bounded failure caching.
