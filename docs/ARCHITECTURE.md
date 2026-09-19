@@ -4,10 +4,10 @@ Mod Recon Core uses the public ReforgerMods V2 API as its upstream source. The A
 
 ```text
 ReforgerMods API -> Poll / Validate -> Candidate Manifest -> Confirmation
-                                      -> Accepted Manifest -> Diff -> Change Event
-                                                               |-> Enrichment
-                                                               |-> Discord
-                                                               |-> History
+                                      -> Accepted Manifest + persisted diff
+                                      -> bounded enrichment -> ChangeEvent publication
+                                                              |-> webhook outbox/adapter
+                                                              |-> cursor-based consumers
 ```
 
 ## Discovery and configuration
@@ -42,8 +42,10 @@ Polling and optional requests share total request accounting. Optional work (enr
 
 For limits, restart behavior, migrations, and troubleshooting, see [Operations](OPERATIONS.md).
 
-## Planned event boundary
+## Event boundary in v0.3
 
-The current implementation persists events, but `Watch.process_pending` still combines enrichment, rendering, and delivery retry state. `Engine.worker` runs polling and delivery in the same worker; a rendered Discord payload and one delivery status live on each event. `presentation.py` also computes supported package-family groupings. These are existing implementation constraints, not a stable integration interface.
+The proven observation/confirmation transaction is retained. A separate per-server worker finalizes stored facts through bounded enrichment and publishes an immutable event in `event_publications`. Publication sequence and webhook outbox insertion commit together. Another independent worker consumes that outbox; its network waits never run in the polling thread. A server without a webhook still publishes events. `Watch.process_pending` remains a synchronous compatibility helper, not the persistent engine's scheduling path.
 
-v0.3 will expose a normalized persisted ChangeEvent, with delivery-specific payloads and acknowledgements owned by adapters. See the [ChangeEvent proposal](CHANGE_EVENTS.md) for the planned schema and compatibility path. Core retains full monitoring, history, metadata, and webhook capabilities for self-hosters.
+Core grouping rules produce facts with member IDs, exact version strings, and evidence; presentation formats them. Legacy event delivery columns are mirrored for compatibility, but the webhook outbox owns transport state. New consumers read events without mutating global delivery state. See the [ChangeEvent contract](CHANGE_EVENTS.md) and [integration API](INTEGRATION.md). Core retains full monitoring, history, metadata, and webhook capabilities for self-hosters.
+
+`SharedAPI` sets explicit request purposes: authoritative `server` polling, `search` discovery, `verify_server` selection verification, and exact-version enrichment. Direct `get` calls default to optional work, regardless of URL. All non-poll purposes use the optional quota allowance. Library monitor reconciliation also validates the sum of individual cadences against the same reserved allowance.

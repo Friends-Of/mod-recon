@@ -12,21 +12,14 @@ import tempfile
 import yaml
 from watch import RequestFailure, Unsafe, load_env, validate
 from .config import ConfigError, load, parse, read_raw
-from .engine import Budget, Engine, SharedAPI, configured_api, verify_quota
+from .engine import Budget, Engine, SharedAPI, InstanceLock, configured_api, verify_quota
 from .text import terminal
 from .backup import backup_state
 
 
 def lookup(api,query,page=1):
-    # Search one discriminating token upstream; filter punctuation-insensitively.
-    # Normalize punctuation so formatted names can be searched safely.
-    normalized=re.sub(r'(?<=[a-z])\.(?=[a-z])','',query.lower())
-    tokens=re.findall(r'[a-z0-9]+',normalized)
-    if not tokens: raise ConfigError('Enter a server name to search')
-    seed=max(tokens,key=lambda token:(any(c.isdigit() for c in token),len(token)),default='server')
-    entries,pages=api.search(seed,page)
-    def words(text): return set(re.findall(r'[a-z0-9]+',re.sub(r'(?<=[a-z])\.(?=[a-z])','',text.lower())))
-    return [s for s in entries if all(t in words(s['name']) for t in tokens)],pages
+    from .discovery import search_servers
+    return search_servers(api,query,page)
 
 
 def add_server(path,api,server_id,name,webhook_env):
@@ -36,7 +29,7 @@ def add_server(path,api,server_id,name,webhook_env):
     if not isinstance(raw.get('servers'),list): raise ConfigError('servers must be a list')
     if any(isinstance(s,dict) and s.get('server_id')==server_id for s in raw['servers']):
         raise ConfigError('This server is already configured')
-    payload=api.server(server_id)
+    payload=getattr(api,'verify_server',api.server)(server_id)
     server,dataset=payload.get('server'),payload.get('dataset')
     if (payload.get('status')!='success' or not isinstance(server,dict) or server.get('id')!=server_id
             or not isinstance(server.get('name'),str) or not server['name'].strip()
@@ -93,6 +86,7 @@ def main(argv=None):
     commands.add_parser('quota',help='Verify the effective free or authenticated API allowance')
     backup=commands.add_parser('backup',help='Back up stopped monitoring state and verify integrity')
     backup.add_argument('--output',required=True,help='New private backup directory; must not exist')
+    commands.add_parser('migrate',help='Upgrade stopped history using stored facts only; back up first')
     args=parser.parse_args(argv)
     path=Path(args.config).resolve()
     logging.basicConfig(level=logging.INFO,format='%(asctime)s %(threadName)s %(levelname)s %(message)s')
@@ -119,6 +113,13 @@ def main(argv=None):
                     print(f"{i}. {terminal(server['name'])}\n   {terminal(server.get('scenarioName') or 'Scenario unavailable')}\n   {terminal(server.get('players','?'))}/{terminal(server.get('maxPlayers','?'))} players | {'online' if server['online'] else 'offline'}\n   ID: {terminal(server['id'])}\n")
                 if not matches: print('No matches on this page. Try a shorter name or the next page.')
                 print(f'Upstream search page {args.page}/{max(1,pages)}; use --page for more results.')
+        elif args.command=='migrate':
+            config=load(path,require_webhooks=False)
+            if not config.database_path.is_file(): raise ConfigError('No history database to migrate')
+            from .storage import migrate
+            with InstanceLock(config.database_path), closing(sqlite3.connect(config.database_path,timeout=30)) as db:
+                migrate(db)
+            print('History schema verified at version 1; no polling or delivery performed.')
         elif args.command=='backup':
             config=load(path,require_webhooks=False)
             result=backup_state(config.database_path,args.output)

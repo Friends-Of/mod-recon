@@ -117,7 +117,7 @@ class API:
                 raise RequestFailure('invalid metadata field')
             if isinstance(detail.get(field), str) and len(detail[field].encode('utf-8', errors='surrogatepass')) > 65536:
                 raise RequestFailure('metadata field exceeds size limit')
-        return detail
+        return {**detail, '_retrieved_at': now()}
 
 def validate(payload, expected_id):
     if not isinstance(payload, dict) or payload.get('status') != 'success':
@@ -168,13 +168,27 @@ class Watch:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(path, timeout=30)
         self.db.row_factory = sqlite3.Row
-        from importlib.resources import files
-        self.db.executescript(files('modrecon').joinpath('schema.sql').read_text(encoding='utf-8'))
+        from modrecon.storage import migrate
+        try:
+            migrate(self.db)
+        except BaseException:
+            self.db.close()
+            raise
         self.api, self.webhook = api, webhook
         with self.db:
             self.db.execute('INSERT OR IGNORE INTO servers(id,upstream_server_id,label,created_at) VALUES(?,?,?,?)', (uid(), server_id, label, now()))
             self.db.execute('UPDATE servers SET label=? WHERE upstream_server_id=?', (label, server_id))
         self.server_id = server_id
+        self.destination_key = 'webhook:'+hashlib.sha256(webhook.encode()).hexdigest() if webhook else None
+        if self.destination_key:
+            self.bind_legacy_destination(self.destination_key)
+
+    def bind_legacy_destination(self, key):
+        # First v0.3 binding must use the verified unchanged legacy configuration.
+        with self.db:
+            legacy='legacy:'+self.row()['id']
+            self.db.execute('UPDATE webhook_outbox SET destination_key=? WHERE destination_key=?',(key,legacy))
+            self.db.execute('UPDATE change_events SET destination_key=? WHERE destination_key=?',(key,legacy))
 
     def row(self):
         return self.db.execute('SELECT * FROM servers WHERE upstream_server_id=?', (self.server_id,)).fetchone()
@@ -234,6 +248,8 @@ class Watch:
                     items.append((kind, mod_id, (after or before)['mod_name'], before['mod_version'] if before else None, after['mod_version'] if after else None))
             event_id = uid()
             self.db.execute('INSERT INTO change_events(id,server_id,previous_snapshot_id,new_snapshot_id,detected_at,added_count,removed_count,updated_count) VALUES(?,?,?,?,?,?,?,?)', (event_id, row['id'], accepted, candidate, now(), *(sum(i[0] == k for i in items) for k in ('added','removed','updated'))))
+            self.db.execute('UPDATE change_events SET server_name=?,display_name=?,confirmation_collected_at=?,confirmation_observations=?,legacy_backfill=0,destination_key=? WHERE id=?',
+                            (server.get('name'),row['label'],dataset.get('lastCollectionAt'),count,self.destination_key,event_id))
             self.db.executemany('INSERT INTO change_items(event_id,change_type,mod_id,mod_name,before_version,after_version,metadata_status) VALUES(?,?,?,?,?,?,?)', [(event_id, *item, 'not_requested') for item in items])
             self.db.execute("UPDATE manifest_snapshots SET state='accepted' WHERE id=?", (candidate,))
             self.db.execute('UPDATE servers SET last_accepted_snapshot_id=?,candidate_snapshot_id=NULL,candidate_seen_count=0 WHERE id=?', (candidate, row['id']))
@@ -254,11 +270,11 @@ class Watch:
         except RequestFailure as exc:
             self.reject('error', str(exc))
 
-    def process_pending(self, send=None):
-        events = self.db.execute('SELECT * FROM change_events WHERE server_id=? AND delivered_at IS NULL ORDER BY detected_at LIMIT 1', (self.row()['id'],)).fetchall()
+    def finalize_pending(self):
+        """Finalize one stored event independently of any destination or retry."""
+        from modrecon.events import publish_stored
+        events = self.db.execute('SELECT e.* FROM change_events e LEFT JOIN event_publications p ON p.event_id=e.id WHERE e.server_id=? AND p.event_id IS NULL ORDER BY e.detected_at,e.id LIMIT 1', (self.row()['id'],)).fetchall()
         for event in events:
-            if event['delivery_next_at'] > time.time():
-                break
             if not event['enrichment_done']:
                 deadline = time.monotonic() + 30
                 items = self.db.execute('SELECT * FROM change_items WHERE event_id=?', (event['id'],)).fetchall()
@@ -271,27 +287,34 @@ class Watch:
                         detail = self.api.version(item['mod_id'], item['after_version'])
                         with self.db:
                             self.db.execute("UPDATE change_items SET size_bytes=?,changelog=?,game_version=?,created_at=?,updated_at=?,metadata_status='complete' WHERE event_id=? AND mod_id=?", (detail.get('size'), detail.get('changelog'), detail.get('gameVersion'), detail.get('createdAt'), detail.get('updatedAt'), event['id'], item['mod_id']))
+                            self.db.execute('UPDATE change_items SET metadata_retrieved_at=? WHERE event_id=? AND mod_id=?',(detail.get('_retrieved_at'),event['id'],item['mod_id']))
                     except RequestFailure:
                         with self.db:
                             self.db.execute("UPDATE change_items SET metadata_status='unavailable' WHERE event_id=? AND mod_id=?", (event['id'], item['mod_id']))
                 with self.db:
                     self.db.execute('UPDATE change_events SET enrichment_done=1 WHERE id=?', (event['id'],))
-            event = self.db.execute('SELECT * FROM change_events WHERE id=?', (event['id'],)).fetchone()
-            payload = json.loads(event['payload_json']) if event['payload_json'] else self.message(event)
             with self.db:
-                self.db.execute('UPDATE change_events SET payload_json=? WHERE id=?', (json.dumps(payload), event['id']))
-            if not send and not self.webhook:
-                LOG.info('Event %s queued; webhook not configured', event['id'])
-                break
-            try:
-                (send or self.send)(payload)
-                with self.db:
-                    self.db.execute('UPDATE change_events SET delivered_at=?,delivery_error=NULL WHERE id=?', (now(), event['id']))
-            except RequestFailure as exc:
-                with self.db:
-                    self.db.execute('UPDATE change_events SET delivery_error=?,delivery_next_at=? WHERE id=?', (str(exc), time.time() + max(120, exc.retry_after), event['id']))
-                LOG.warning('Discord delivery failed; queued for retry')
-                break
+                self.db.execute('BEGIN IMMEDIATE')
+                fresh=self.db.execute('SELECT * FROM change_events WHERE id=?',(event['id'],)).fetchone()
+                publish_stored(self.db,fresh)
+
+    def deliver_pending(self,send=None):
+        from modrecon.webhook import deliver_one
+        return deliver_one(self,send)
+
+    def process_pending(self, send=None):
+        """Legacy synchronous convenience API. Engine uses separate workers."""
+        self.finalize_pending()
+        if send and not self.webhook:
+            key=self.destination_key or 'callback:'+self.server_id
+            self.bind_legacy_destination(key)
+            with self.db:
+                self.db.execute('INSERT OR IGNORE INTO webhook_outbox(event_id,destination_key,payload_json,delivered_at,next_attempt,error) SELECT e.id,?,e.payload_json,e.delivered_at,e.delivery_next_at,e.delivery_error FROM change_events e JOIN event_publications p ON p.event_id=e.id WHERE e.server_id=?',(key,self.row()['id']))
+            self.destination_key=key
+        # Compatibility for callers managing the legacy retry column directly.
+        with self.db:
+            self.db.execute('UPDATE webhook_outbox SET next_attempt=(SELECT delivery_next_at FROM change_events WHERE id=event_id) WHERE destination_key=?',(self.destination_key,))
+        self.deliver_pending(send)
 
     def message(self, event):
         from presentation import render_message
@@ -301,7 +324,7 @@ class Watch:
     def send(self, payload):
         from presentation import encode_webhook
         body, content_type = encode_webhook(payload)
-        request = Request(self.webhook + ('&' if '?' in self.webhook else '?') + 'wait=true', data=body, headers={'Content-Type': content_type, 'User-Agent': 'mod-recon/0.2.9'}, method='POST')
+        request = Request(self.webhook + ('&' if '?' in self.webhook else '?') + 'wait=true', data=body, headers={'Content-Type': content_type, 'User-Agent': 'mod-recon/0.3.0'}, method='POST')
         try:
             with urlopen(request, timeout=15) as response:
                 if response.status not in (200, 204):

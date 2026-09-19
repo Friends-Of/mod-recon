@@ -6,7 +6,7 @@ Mod Recon monitors the server-reported mod manifests of Arma Reforger servers an
 
 ## Current milestone
 
-v0.2 multi-server monitoring is complete. v0.2.9 production hardening is current; v0.3 will establish normalized ChangeEvents independently of delivery. Do not implement roadmap features unless the active request explicitly asks for them.
+v0.2.9 is the production-hardening baseline. v0.3 implements normalized ChangeEvents independently of delivery and is undergoing release review. Do not implement other roadmap features unless the active request explicitly asks for them. Migration of a production database requires the user's explicit upgrade approval.
 
 Core must remain usable on anonymous/free access by default; upstream API credentials are optional. Production changes require the user's explicit deployment scope. Preserve existing database identity, history, and configuration during development.
 

@@ -1,2 +1,2 @@
-"""Mod Recon multi-server CLI."""
-__version__ = '0.2.9'
+"""Mod Recon Core. Integration API: modrecon.core; event reads: modrecon.events."""
+__version__ = '0.3.0'

@@ -22,6 +22,8 @@ Upstream response bodies are capped at 4,000,000 bytes. Individual metadata fiel
 
 ## Workers and restart behavior
 
+In v0.3 persistent mode, each server has an observation worker and a separate event-finalization worker; configured webhooks also have a delivery worker. Slow metadata or Discord I/O does not run in observation threads. Separate stage failures are logged and retried. Publication happens even without a webhook. `run --once` remains a finite poll/finalize/deliver validation cycle, not a persistent scheduler.
+
 Each configured server has an independent worker and SQLite state. A slow or failing server does not stop unrelated workers. Workers are staggered during startup; each cycle polls and processes at most one pending event. Posts sharing a webhook use a shared one-second success cooldown and respect retry delays.
 
 The v0.2 process lock prevents two v0.2 runners from sharing one database. It does not detect a legacy v0.1.1 process. Do not run incompatible versions against the same database. Restarting resumes accepted state, candidates, history, and pending events.
@@ -63,6 +65,16 @@ modrecon status
 modrecon run --once
 modrecon run
 ```
+
+### Upgrading from v0.2.9 to v0.3
+
+Stop all writers, verify a backup, and preserve the exact current private configuration and service definition. Run `modrecon check` and `modrecon migrate` using the candidate binary, checking each exit code. Migration adds event/provenance fields, publication/outbox tables, and history schema version 1 transactionally. It uses stored facts only and can be repeated. Unknown newer schemas are rejected. Starting any v0.3 watcher also invokes this migration; never use `run --once` as a read-only inspection of an unbacked production database.
+
+Compare original server IDs, accepted/candidate pointers, snapshot/event counts, frozen legacy payloads, and delivery timestamps against the backup. Inspect a copied database before approving the production upgrade. Keep the original webhook configuration for first startup: migrated destination placeholders bind once to that verified destination. Subsequent webhook changes do not reroute old pending outbox rows automatically.
+
+After validation, start one new persistent service and verify a full staggered polling round, publication counts, and queued deliveries. Existing delivered events must not send again. The first valid manifest for a genuinely new server remains silent. Current limits, donation settings, fleet, and optional-key behavior need no changes.
+
+For rollback, stop the candidate, retain the failed migrated database for diagnosis, restore the pre-migration history and previous binary/configuration/service definition, then verify status before restart. Do not point the older runner at the migrated history. Retain the current API-budget sidecar when rolling back code/history: replacing it with an older copy could forget requests already spent. Cache is rebuildable. A restored historical budget requires conservative accounting for requests since that backup.
 
 `check` validates without polling or posting. `status` reads saved state without polling. `run --once` performs one poll and delivery cycle per configured server. For a background Windows service, `run_service.py` writes rotating logs to `data/service.log`.
 
