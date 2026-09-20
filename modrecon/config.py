@@ -82,10 +82,14 @@ class Config:
     donation_url: str | None = None
     requests_per_minute: int = 50
     requests_per_day: int = 5000
+    api_key: str | None = field(default=None, repr=False)
+    required_api_plan: str | None = None
+    minimum_api_daily_quota: int = 0
 
 
 def parse(raw, path, require_webhooks=True):
-    allowed = {'servers','database_path','poll_interval','confirmation_polls','base_url','donation_url','requests_per_minute','requests_per_day'}
+    allowed = {'servers','database_path','poll_interval','confirmation_polls','base_url','donation_url','requests_per_minute','requests_per_day',
+               'api_key_env','required_api_plan','minimum_api_daily_quota'}
     if set(raw) - allowed:
         raise ConfigError('Unknown top-level configuration field')
     values = {}
@@ -120,6 +124,20 @@ def parse(raw, path, require_webhooks=True):
     base = raw.get('base_url','https://api.reforgermods.net/v2')
     if not isinstance(base,str) or urlparse(base).scheme != 'https' or not urlparse(base).hostname or urlparse(base).username:
         raise ConfigError('base_url must be an HTTPS URL without credentials')
+    key_env = raw.get('api_key_env', 'REFORGERMODS_API_KEY')
+    if not isinstance(key_env,str) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*',key_env):
+        raise ConfigError('api_key_env must be an environment-variable name')
+    key = os.environ.get(key_env) or None
+    plan = raw.get('required_api_plan')
+    if plan not in (None,'developer','pro'):
+        raise ConfigError('required_api_plan must be developer or pro')
+    minimum_quota = raw.get('minimum_api_daily_quota',0)
+    if type(minimum_quota) is not int or minimum_quota<0:
+        raise ConfigError('minimum_api_daily_quota must be a nonnegative integer')
+    if (plan or minimum_quota) and require_webhooks and not key:
+        raise ConfigError('Authenticated monitoring requires the configured API-key environment variable')
+    if key and (base.rstrip('/')!='https://api.reforgermods.net/v2' or any(c.isspace() or ord(c)<33 or ord(c)>126 for c in key)):
+        raise ConfigError('API credentials require the official HTTPS V2 endpoint and a valid token')
     donation = raw.get('donation_url') or None
     if donation:
         donation = resolve(donation,'donation_url')
@@ -135,7 +153,8 @@ def parse(raw, path, require_webhooks=True):
         raise ConfigError('Polling exceeds the daily request budget; increase poll_interval or configure your verified API allowance')
     if len(entries)*60/values['poll_interval'] > values['requests_per_minute']*.8:
         raise ConfigError('Polling exceeds the minute request budget; increase poll_interval or configure your verified API allowance')
-    return Config(tuple(entries),database,base_url=base,donation_url=donation,**values)
+    return Config(tuple(entries),database,base_url=base,donation_url=donation,api_key=key,
+                  required_api_plan=plan,minimum_api_daily_quota=minimum_quota,**values)
 
 
 def load(path, require_webhooks=True):

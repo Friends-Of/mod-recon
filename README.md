@@ -2,11 +2,13 @@
 
 **Know what changed.**
 
-Mod Recon is an open-source community utility that monitors Arma Reforger servers and reports when their mod manifests change—what was added, removed, or updated.
+Mod Recon Core is an open-source, self-hostable tool that monitors Arma Reforger server mod manifests, confirms changes, preserves history, and reports what was added, removed, or updated.
 
 Free · Open source · Community supported
 
-**Current release: v0.2**
+**Completed milestone: v0.2 · Current stabilization: v0.2.9**
+
+Core works with free, anonymous API access. Self-hosters can optionally supply their own ReforgerMods API key. No paid API account is required.
 
 ## What it does
 
@@ -81,6 +83,6 @@ Each server has independent state, history, change events, and destination. Serv
 
 **[Support Mod Recon](https://donate.stripe.com/4gM3cv5Eodct0N49VTfw400)** — Keep server updates free, open source, and running for everyone.
 
-Bug reports and pull requests are welcome. Mod Recon v0.2 is self-hosted and configured locally.
+Bug reports and pull requests are welcome. Mod Recon is self-hosted and configured locally. Its scope is reliable monitoring, useful change information, and integration interfaces.
 
 Licensed under [MIT](LICENSE). Data comes from the [ReforgerMods API](https://reforgermods.net/arma-reforger-mods-api/v2/). Mod Recon is an independent community project and is not affiliated with Bohemia Interactive or ReforgerMods.
